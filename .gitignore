@@ -40,7 +40,6 @@ temp/
 *.njsproj
 *.sln
 *.swp
-*.json
 # Hệ điều hành
 .DS_Store
 Thumbs.db
