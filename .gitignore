@@ -1,0 +1,46 @@
+# Thư mục chứa các gói npm
+node_modules/
+
+# File môi trường chứa thông tin nhạy cảm
+.env
+.env.local
+.env.development
+.env.test
+.env.production
+
+# Thư mục build hoặc output
+dist/
+build/
+
+# Log files
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs/
+*.log
+
+# Cache
+.cache/
+.eslintcache
+.parcel-cache
+
+# Dependency lock files (nếu bạn không muốn đẩy lên, tùy chọn)
+# package-lock.json
+# yarn.lock
+
+# Thư mục tạm thời
+tmp/
+temp/
+
+# IDE/Editor files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
+*.json
+# Hệ điều hành
+.DS_Store
+Thumbs.db
