@@ -71,6 +71,7 @@ app.use("/api/product-types", productTypeRoutes);
 app.use("/api/brands", brandRoutes);
 app.use("/api/brand-types", brandTypeRoutes);
 app.use("/api/notifications", notificationRoutes);
+app.use("/api/dashboard", dashboardRoutes);
 // Route kiểm tra server
 app.get("/health", (req, res) => {
   res.status(200).json({
