@@ -1,4 +1,3 @@
-// controller/dashboard_controller.js
 const supabase = require("../supabaseClient");
 
 class DashboardController {
