@@ -49,7 +49,7 @@ app.use(cors()); // Cho phép yêu cầu từ các nguồn khác
 app.use(
   rateLimit({
     windowMs: 15 * 60 * 1000, // 15 phút
-    max: 100, // Giới hạn 100 yêu cầu mỗi IP
+    max: 500,
     message: {
       success: false,
       message: "Quá nhiều yêu cầu, vui lòng thử lại sau.",
