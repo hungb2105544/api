@@ -14,6 +14,7 @@ const productTypeRoutes = require("./route/product_type_route");
 const brandRoutes = require("./route/brand_route");
 const brandTypeRoutes = require("./route/brand_type_route");
 const notificationRoutes = require("./route/notification_route");
+const dashboardRoutes = require("./route/dashboard_route");
 const fs = require("fs").promises;
 const path = require("path");
 
