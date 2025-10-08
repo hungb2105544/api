@@ -1,11 +1,11 @@
 const supabase = require("../supabaseClient");
 const { v4: uuidv4 } = require("uuid");
 
+const NotificationModel = require("./notification_model");
+
 class OrderModel {
   static SELECT_FIELDS =
     "id, order_number, user_id, user_address_id, subtotal, discount_amount, shipping_fee, tax_amount, total, voucher_id, points_earned, points_used, status, payment_status, payment_method, payment_reference, notes, estimated_delivery_date, delivered_at, created_at, updated_at";
-
-  // Lấy danh sách đơn hàng với phân trang và bộ lọc trạng thái
   static async getAllOrders(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase
@@ -14,7 +14,6 @@ class OrderModel {
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
-      // Áp dụng bộ lọc
       if (filters.status) {
         query = query.eq("status", filters.status);
       }
@@ -25,10 +24,6 @@ class OrderModel {
       const { data, error } = await query;
 
       if (error) {
-        console.error(
-          "❌ Model - Lỗi Supabase khi lấy danh sách đơn hàng:",
-          error.message
-        );
         throw new Error("Không thể lấy danh sách đơn hàng");
       }
 
@@ -39,7 +34,6 @@ class OrderModel {
     }
   }
 
-  // Lấy chi tiết đơn hàng theo ID
   static async getOrderById(id) {
     try {
       const { data, error } = await supabase
@@ -54,7 +48,6 @@ class OrderModel {
         if (error.code === "PGRST116") {
           throw new Error("Không tìm thấy đơn hàng");
         }
-        console.error("❌ Model - Lỗi Supabase:", error.message);
         throw new Error("Lỗi khi lấy đơn hàng");
       }
 
@@ -65,7 +58,6 @@ class OrderModel {
     }
   }
 
-  // Cập nhật trạng thái đơn hàng
   static async updateOrderStatus(
     id,
     newStatus,
@@ -86,7 +78,6 @@ class OrderModel {
     }
 
     try {
-      // Kiểm tra đơn hàng tồn tại
       const { data: order, error: fetchError } = await supabase
         .from("orders")
         .select(this.SELECT_FIELDS)
@@ -97,14 +88,9 @@ class OrderModel {
         if (fetchError && fetchError.code === "PGRST116") {
           throw new Error("Không tìm thấy đơn hàng");
         }
-        console.error(
-          "❌ Model - Lỗi khi kiểm tra đơn hàng:",
-          fetchError?.message
-        );
         throw new Error("Lỗi khi kiểm tra đơn hàng");
       }
 
-      // Cập nhật trạng thái
       const { data: updatedOrder, error: updateError } = await supabase
         .from("orders")
         .update({
@@ -120,14 +106,9 @@ class OrderModel {
         .single();
 
       if (updateError) {
-        console.error(
-          "❌ Model - Lỗi khi cập nhật trạng thái:",
-          updateError.message
-        );
         throw new Error("Không thể cập nhật trạng thái đơn hàng");
       }
 
-      // Ghi lịch sử trạng thái
       const { error: statusError } = await supabase
         .from("order_status_history")
         .insert({
@@ -144,7 +125,22 @@ class OrderModel {
           "❌ Model - Lỗi khi ghi lịch sử trạng thái:",
           statusError.message
         );
-        throw new Error("Không thể ghi lịch sử trạng thái");
+      }
+
+      try {
+        console.log(
+          `🚀 Đang gửi thông báo cho đơn hàng #${order.order_number} với trạng thái mới: ${newStatus}`
+        );
+        await NotificationModel.createOrderUpdateNotification(
+          order.id,
+          order.user_id,
+          newStatus
+        );
+      } catch (notificationError) {
+        console.error(
+          `❌ Lỗi khi gửi thông báo cho đơn hàng ${order.id}:`,
+          notificationError.message
+        );
       }
 
       return updatedOrder;
@@ -157,10 +153,8 @@ class OrderModel {
     }
   }
 
-  // Xóa đơn hàng (soft delete)
   static async deleteOrder(id, comment = "", changedBy = null) {
     try {
-      // Kiểm tra đơn hàng tồn tại
       const { data: order, error: fetchError } = await supabase
         .from("orders")
         .select(this.SELECT_FIELDS)
@@ -171,55 +165,21 @@ class OrderModel {
         if (fetchError && fetchError.code === "PGRST116") {
           throw new Error("Không tìm thấy đơn hàng");
         }
-        console.error(
-          "❌ Model - Lỗi khi kiểm tra đơn hàng:",
-          fetchError?.message
-        );
         throw new Error("Lỗi khi kiểm tra đơn hàng");
       }
 
-      // Kiểm tra trạng thái hiện tại
       if (order.status === "cancelled") {
         throw new Error("Đơn hàng đã bị hủy trước đó");
       }
 
-      // Cập nhật trạng thái thành cancelled
-      const { data: updatedOrder, error: updateError } = await supabase
-        .from("orders")
-        .update({
-          status: "cancelled",
-          updated_at: new Date().toISOString(),
-        })
-        .eq("id", id)
-        .select(this.SELECT_FIELDS)
-        .single();
+      const cancelledOrder = await this.updateOrderStatus(
+        id,
+        "cancelled",
+        comment || "Đơn hàng đã bị hủy",
+        changedBy
+      );
 
-      if (updateError) {
-        console.error("❌ Model - Lỗi khi hủy đơn hàng:", updateError.message);
-        throw new Error("Không thể hủy đơn hàng");
-      }
-
-      // Ghi lịch sử trạng thái
-      const { error: statusError } = await supabase
-        .from("order_status_history")
-        .insert({
-          order_id: id,
-          old_status: order.status,
-          new_status: "cancelled",
-          comment: comment || "Đơn hàng đã bị hủy",
-          changed_at: new Date().toISOString(),
-          changed_by: changedBy || null,
-        });
-
-      if (statusError) {
-        console.error(
-          "❌ Model - Lỗi khi ghi lịch sử trạng thái:",
-          statusError.message
-        );
-        throw new Error("Không thể ghi lịch sử trạng thái");
-      }
-
-      return updatedOrder;
+      return cancelledOrder;
     } catch (error) {
       console.error("❌ Model - Lỗi khi hủy đơn hàng:", error.message);
       throw error;
