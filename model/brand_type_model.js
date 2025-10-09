@@ -4,7 +4,6 @@ class BrandTypeModel {
   static SELECT_FIELDS =
     "id, brand_id, type_id, brand:brands(brand_name), product_types(type_name)";
 
-  // Lấy danh sách loại sản phẩm theo brand_id
   static async getTypeByBrandId(brandId) {
     try {
       if (!brandId || isNaN(brandId)) {
@@ -36,7 +35,6 @@ class BrandTypeModel {
     }
   }
 
-  // Lấy tất cả quan hệ thương hiệu-loại sản phẩm
   static async getAllBrandType() {
     try {
       const { data, error } = await supabase
@@ -63,14 +61,12 @@ class BrandTypeModel {
     }
   }
 
-  // Xóa quan hệ thương hiệu-loại sản phẩm
   static async deleteBrandType(id) {
     try {
       if (!id || isNaN(id)) {
         throw new Error("ID quan hệ thương hiệu-loại sản phẩm không hợp lệ");
       }
 
-      // Kiểm tra xem quan hệ có sản phẩm liên quan không
       const { data: relatedProducts, error: productError } = await supabase
         .from("products")
         .select("id")
@@ -131,17 +127,14 @@ class BrandTypeModel {
     }
   }
 
-  // Tạo mới quan hệ thương hiệu-loại sản phẩm
   static async createBrandType(brandTypeData) {
     try {
       const { brand_id, type_id } = brandTypeData;
 
-      // Kiểm tra dữ liệu đầu vào
       if (!brand_id || !type_id) {
         throw new Error("ID thương hiệu và ID loại sản phẩm là bắt buộc");
       }
 
-      // Kiểm tra xem brand_id và type_id có tồn tại không
       const { data: brand, error: brandError } = await supabase
         .from("brands")
         .select("id")
@@ -162,7 +155,6 @@ class BrandTypeModel {
         throw new Error("Loại sản phẩm không tồn tại");
       }
 
-      // Kiểm tra xem quan hệ đã tồn tại chưa
       const { data: existingRelation, error: relationError } = await supabase
         .from("brand_types")
         .select("id")
@@ -178,7 +170,6 @@ class BrandTypeModel {
         throw new Error("Quan hệ giữa thương hiệu và loại sản phẩm đã tồn tại");
       }
 
-      // Tạo bản ghi quan hệ
       const { data, error } = await supabase
         .from("brand_types")
         .insert({

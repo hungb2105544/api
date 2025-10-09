@@ -15,6 +15,9 @@ const brandRoutes = require("./route/brand_route");
 const brandTypeRoutes = require("./route/brand_type_route");
 const notificationRoutes = require("./route/notification_route");
 const dashboardRoutes = require("./route/dashboard_route");
+const userRoutes = require("./route/user_route");
+const branchRoutes = require("./route/branch_route");
+const sizeRoutes = require("./route/size_route");
 const fs = require("fs").promises;
 const path = require("path");
 
@@ -73,6 +76,9 @@ app.use("/api/brands", brandRoutes);
 app.use("/api/brand-types", brandTypeRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/users", userRoutes);
+app.use("/api/branches", branchRoutes);
+app.use("/api/sizes", sizeRoutes);
 // Route kiểm tra server
 app.get("/health", (req, res) => {
   res.status(200).json({

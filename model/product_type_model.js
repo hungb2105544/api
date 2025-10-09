@@ -1,11 +1,10 @@
 const supabase = require("../supabaseClient");
-const path = require("path");
+const StorageHelper = require("./storage_helper");
 
 class ProductTypeModel {
   static SELECT_FIELDS =
     "id, type_name, description, parent_id, product_type:type_name, image_url, is_active";
 
-  // Lấy tất cả loại sản phẩm
   static async getAllProductType() {
     try {
       const { data, error } = await supabase
@@ -32,45 +31,23 @@ class ProductTypeModel {
     }
   }
 
-  // Tạo mới loại sản phẩm
   static async createProductType(typeData, file) {
     try {
       const { type_name, description, parent_id, is_active = true } = typeData;
       let image_url = null;
 
-      // Kiểm tra dữ liệu đầu vào
       if (!type_name) {
         throw new Error("Tên loại sản phẩm là bắt buộc");
       }
 
-      // Xử lý upload ảnh nếu có
       if (file) {
-        const fileExt = path.extname(file.originalname);
-        const fileName = `${Date.now()}-${type_name.replace(
-          /\s+/g,
-          "-"
-        )}${fileExt}`;
-        const filePath = `product_types/${fileName}`;
-
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("product_types")
-          .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-          });
-
-        if (uploadError) {
-          throw new Error(`Lỗi khi upload ảnh: ${uploadError.message}`);
-        }
-
-        // Lấy URL công khai của ảnh
-        const { data: publicUrlData } = supabase.storage
-          .from("product_types")
-          .getPublicUrl(filePath);
-
-        image_url = publicUrlData.publicUrl;
+        image_url = await StorageHelper.uploadImage(
+          file,
+          "product_types",
+          type_name
+        );
       }
 
-      // Tạo bản ghi loại sản phẩm trong database
       const { data, error } = await supabase
         .from("product_types")
         .insert({
@@ -85,11 +62,8 @@ class ProductTypeModel {
         .single();
 
       if (error) {
-        // Xóa ảnh đã upload nếu insert thất bại
         if (image_url) {
-          await supabase.storage
-            .from("product_types")
-            .remove([`product_types/${path.basename(image_url)}`]);
+          await StorageHelper.deleteImage(image_url, "product_types");
         }
         if (error.code === "23505") {
           throw new Error("Tên loại sản phẩm đã tồn tại");
@@ -110,18 +84,15 @@ class ProductTypeModel {
     }
   }
 
-  // Cập nhật loại sản phẩm
   static async updateProductType(id, typeData, file) {
     try {
       const { type_name, description, parent_id, is_active } = typeData;
-      let image_url = typeData.image_url; // Giữ URL hiện tại nếu không upload ảnh mới
+      let image_url = typeData.image_url;
 
-      // Kiểm tra ID hợp lệ
       if (!id || isNaN(id)) {
         throw new Error("ID loại sản phẩm không hợp lệ");
       }
 
-      // Lấy thông tin loại sản phẩm hiện tại
       const { data: existingType, error: fetchError } = await supabase
         .from("product_types")
         .select("image_url")
@@ -132,41 +103,20 @@ class ProductTypeModel {
         throw new Error("Loại sản phẩm không tồn tại");
       }
 
-      // Xử lý upload ảnh mới nếu có
       if (file) {
-        const fileExt = path.extname(file.originalname);
-        const fileName = `${Date.now()}-${
-          type_name?.replace(/\s+/g, "-") || "type"
-        }${fileExt}`;
-        const filePath = `product_types/${fileName}`;
+        const newImageUrl = await StorageHelper.uploadImage(
+          file,
+          "product_types",
+          type_name || "type"
+        );
 
-        const { data: uploadData, error: uploadError } = await supabase.storage
-          .from("product_types")
-          .upload(filePath, file.buffer, {
-            contentType: file.mimetype,
-          });
-
-        if (uploadError) {
-          throw new Error(`Lỗi khi upload ảnh: ${uploadError.message}`);
-        }
-
-        // Lấy URL công khai của ảnh mới
-        const { data: publicUrlData } = supabase.storage
-          .from("product_types")
-          .getPublicUrl(filePath);
-
-        image_url = publicUrlData.publicUrl;
-
-        // Xóa ảnh cũ nếu có
-        if (existingType.image_url) {
-          const oldFilePath = `product_types/${path.basename(
-            existingType.image_url
-          )}`;
-          await supabase.storage.from("product_types").remove([oldFilePath]);
-        }
+        await StorageHelper.deleteImage(
+          existingType.image_url,
+          "product_types"
+        );
+        image_url = newImageUrl;
       }
 
-      // Cập nhật bản ghi loại sản phẩm
       const updateData = {
         type_name: type_name || undefined,
         description: description || undefined,
@@ -184,11 +134,8 @@ class ProductTypeModel {
         .single();
 
       if (error) {
-        // Xóa ảnh mới upload nếu update thất bại
         if (file && image_url) {
-          await supabase.storage
-            .from("product_types")
-            .remove([`product_types/${path.basename(image_url)}`]);
+          await StorageHelper.deleteImage(image_url, "product_types");
         }
         if (error.code === "23505") {
           throw new Error("Tên loại sản phẩm đã tồn tại");
@@ -209,15 +156,12 @@ class ProductTypeModel {
     }
   }
 
-  // Xóa loại sản phẩm
   static async deleteProductType(id) {
     try {
-      // Kiểm tra ID hợp lệ
       if (!id || isNaN(id)) {
         throw new Error("ID loại sản phẩm không hợp lệ");
       }
 
-      // Kiểm tra xem loại sản phẩm có sản phẩm liên quan không
       const { data: relatedProducts, error: productError } = await supabase
         .from("products")
         .select("id")
@@ -234,7 +178,6 @@ class ProductTypeModel {
         throw new Error("Không thể xóa loại sản phẩm vì có sản phẩm liên quan");
       }
 
-      // Kiểm tra xem có loại sản phẩm con không
       const { data: childTypes, error: childError } = await supabase
         .from("product_types")
         .select("id")
@@ -251,7 +194,6 @@ class ProductTypeModel {
         throw new Error("Không thể xóa loại sản phẩm vì có loại sản phẩm con");
       }
 
-      // Lấy thông tin loại sản phẩm để xóa ảnh
       const { data: type, error: fetchError } = await supabase
         .from("product_types")
         .select("image_url")
@@ -262,7 +204,6 @@ class ProductTypeModel {
         throw new Error("Loại sản phẩm không tồn tại");
       }
 
-      // Xóa bản ghi loại sản phẩm
       const { error } = await supabase
         .from("product_types")
         .delete()
@@ -272,18 +213,13 @@ class ProductTypeModel {
         throw new Error(`Lỗi khi xóa loại sản phẩm: ${error.message}`);
       }
 
-      // Xóa ảnh trong storage nếu có
       if (type.image_url) {
-        const filePath = `product_types/${path.basename(type.image_url)}`;
-        const { error: storageError } = await supabase.storage
-          .from("product_types")
-          .remove([filePath]);
-
-        if (storageError) {
-          console.warn(
-            `Cảnh báo: Không thể xóa ảnh loại sản phẩm: ${storageError.message}`
-          );
-        }
+        StorageHelper.deleteImage(type.image_url, "product_types").catch(
+          (err) =>
+            console.warn(
+              `Cảnh báo: Không thể xóa ảnh loại sản phẩm: ${err.message}`
+            )
+        );
       }
 
       return {

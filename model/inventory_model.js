@@ -5,7 +5,6 @@ class InventoryModel {
   static SELECT_FIELDS =
     "id, product_id, variant_id, branch_id, quantity, reserved_quantity, min_stock_level, max_stock_level, updated_at, products(name), branches(name), product_variants(color)";
 
-  // Hàm ghi log vào bảng audit_logs
   static async logInventoryChange(
     tableName,
     recordId,
@@ -22,7 +21,7 @@ class InventoryModel {
         old_values: oldValues,
         new_values: newValues,
         user_id: userId,
-        ip_address: null, // Có thể thêm từ request nếu có
+        ip_address: null,
         user_agent: null,
         created_at: new Date().toISOString(),
       });
@@ -37,7 +36,6 @@ class InventoryModel {
     }
   }
 
-  // Lấy danh sách tồn kho với phân trang và bộ lọc
   static async getAllInventory(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase
@@ -46,7 +44,6 @@ class InventoryModel {
         .order("updated_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
-      // Áp dụng bộ lọc
       if (filters.branch_id) {
         query = query.eq("branch_id", filters.branch_id);
       }
@@ -80,7 +77,6 @@ class InventoryModel {
     }
   }
 
-  // Lấy chi tiết tồn kho theo ID
   static async getInventoryById(id) {
     try {
       const { data, error } = await supabase
@@ -104,7 +100,6 @@ class InventoryModel {
     }
   }
 
-  // Thêm hoặc cập nhật tồn kho
   static async upsertInventory(inventoryData, userId = null) {
     if (
       !inventoryData.branch_id ||
@@ -121,7 +116,6 @@ class InventoryModel {
     }
 
     try {
-      // Xác thực khóa ngoại
       const { data: branch, error: branchError } = await supabase
         .from("branches")
         .select("id")
@@ -156,7 +150,6 @@ class InventoryModel {
         }
       }
 
-      // Kiểm tra bản ghi tồn kho hiện tại
       const { data: existingInventory, error: checkError } = await supabase
         .from("inventory")
         .select(
@@ -191,7 +184,6 @@ class InventoryModel {
         existingInventory?.max_stock_level ??
         1000;
 
-      // Kiểm tra min_stock_level và max_stock_level
       if (newQuantity < newMinStockLevel) {
         console.warn(
           `⚠️ Số lượng tồn kho (${newQuantity}) thấp hơn mức tối thiểu (${newMinStockLevel})`
@@ -203,9 +195,7 @@ class InventoryModel {
         );
       }
 
-      // Sử dụng giao dịch để đảm bảo tính toàn vẹn
       if (existingInventory) {
-        // Cập nhật bản ghi tồn tại
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -235,7 +225,6 @@ class InventoryModel {
         }
         result = data;
 
-        // Ghi log
         await this.logInventoryChange(
           "inventory",
           existingInventory.id,
@@ -255,7 +244,6 @@ class InventoryModel {
           userId
         );
       } else {
-        // Thêm bản ghi mới
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -292,7 +280,6 @@ class InventoryModel {
         }
         result = data;
 
-        // Ghi log
         await this.logInventoryChange(
           "inventory",
           result.id,
@@ -318,7 +305,6 @@ class InventoryModel {
     }
   }
 
-  // Giảm số lượng tồn kho (khi đặt hàng)
   static async decreaseInventory(
     branchId,
     productId,
@@ -331,7 +317,6 @@ class InventoryModel {
     }
 
     try {
-      // Xác thực khóa ngoại
       const { data: branch, error: branchError } = await supabase
         .from("branches")
         .select("id")
@@ -366,7 +351,6 @@ class InventoryModel {
         }
       }
 
-      // Kiểm tra bản ghi tồn kho
       const { data: inventory, error: fetchError } = await supabase
         .from("inventory")
         .select(
@@ -395,14 +379,12 @@ class InventoryModel {
       const newQuantity = inventory.quantity - quantity;
       const newReservedQuantity = inventory.reserved_quantity + quantity;
 
-      // Kiểm tra min_stock_level
       if (newQuantity < inventory.min_stock_level) {
         console.warn(
           `⚠️ Số lượng tồn kho (${newQuantity}) thấp hơn mức tối thiểu (${inventory.min_stock_level})`
         );
       }
 
-      // Sử dụng giao dịch
       const { data, error } = await supabase
         .rpc("execute_transaction", {
           query: `
@@ -429,7 +411,6 @@ class InventoryModel {
         throw new Error("Không thể giảm tồn kho");
       }
 
-      // Ghi log
       await this.logInventoryChange(
         "inventory",
         inventory.id,
@@ -452,7 +433,6 @@ class InventoryModel {
     }
   }
 
-  // Tăng số lượng tồn kho (khi nhập hàng)
   static async increaseInventory(
     branchId,
     productId,
@@ -465,7 +445,6 @@ class InventoryModel {
     }
 
     try {
-      // Xác thực khóa ngoại
       const { data: branch, error: branchError } = await supabase
         .from("branches")
         .select("id")
@@ -500,7 +479,6 @@ class InventoryModel {
         }
       }
 
-      // Kiểm tra bản ghi tồn kho
       const { data: inventory, error: fetchError } = await supabase
         .from("inventory")
         .select(
@@ -521,10 +499,8 @@ class InventoryModel {
 
       let result;
       if (inventory) {
-        // Cập nhật bản ghi tồn tại
         const newQuantity = inventory.quantity + quantity;
 
-        // Kiểm tra max_stock_level
         if (newQuantity > inventory.max_stock_level) {
           throw new Error(
             `Số lượng tồn kho (${newQuantity}) vượt quá mức tối đa (${inventory.max_stock_level})`
@@ -557,7 +533,6 @@ class InventoryModel {
         }
         result = data;
 
-        // Ghi log
         await this.logInventoryChange(
           "inventory",
           inventory.id,
@@ -567,7 +542,6 @@ class InventoryModel {
           userId
         );
       } else {
-        // Thêm bản ghi mới
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -604,7 +578,6 @@ class InventoryModel {
         }
         result = data;
 
-        // Ghi log
         await this.logInventoryChange(
           "inventory",
           result.id,
@@ -630,7 +603,6 @@ class InventoryModel {
     }
   }
 
-  // Hoàn tồn kho (khi hủy đơn hàng)
   static async cancelOrderInventory(
     branchId,
     productId,
@@ -643,7 +615,6 @@ class InventoryModel {
     }
 
     try {
-      // Xác thực khóa ngoại
       const { data: branch, error: branchError } = await supabase
         .from("branches")
         .select("id")
@@ -678,7 +649,6 @@ class InventoryModel {
         }
       }
 
-      // Kiểm tra bản ghi tồn kho
       const { data: inventory, error: fetchError } = await supabase
         .from("inventory")
         .select(
@@ -707,14 +677,12 @@ class InventoryModel {
       const newQuantity = inventory.quantity + quantity;
       const newReservedQuantity = inventory.reserved_quantity - quantity;
 
-      // Kiểm tra max_stock_level
       if (newQuantity > inventory.max_stock_level) {
         throw new Error(
           `Số lượng tồn kho (${newQuantity}) vượt quá mức tối đa (${inventory.max_stock_level})`
         );
       }
 
-      // Sử dụng giao dịch
       const { data, error } = await supabase
         .rpc("execute_transaction", {
           query: `
@@ -741,7 +709,6 @@ class InventoryModel {
         throw new Error("Không thể hoàn tồn kho");
       }
 
-      // Ghi log
       await this.logInventoryChange(
         "inventory",
         inventory.id,
@@ -764,10 +731,8 @@ class InventoryModel {
     }
   }
 
-  // Xóa tồn kho (đặt quantity = 0)
   static async deleteInventory(id, userId = null) {
     try {
-      // Kiểm tra bản ghi tồn kho
       const { data: inventory, error: fetchError } = await supabase
         .from("inventory")
         .select(
@@ -791,7 +756,6 @@ class InventoryModel {
         throw new Error("Không thể xóa vì vẫn còn số lượng giữ chỗ");
       }
 
-      // Sử dụng giao dịch
       const { data, error } = await supabase
         .rpc("execute_transaction", {
           query: `
@@ -817,7 +781,6 @@ class InventoryModel {
         throw new Error("Không thể xóa tồn kho");
       }
 
-      // Ghi log
       await this.logInventoryChange(
         "inventory",
         inventory.id,

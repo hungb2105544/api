@@ -5,12 +5,9 @@ class OrderController {
   static async getAllOrders(req, res) {
     try {
       const { limit = 10, offset = 0, status, user_id } = req.query;
-      const filters = { status, user_id };
-
       const orders = await OrderModel.getAllOrders(
         parseInt(limit),
-        parseInt(offset),
-        filters
+        parseInt(offset)
       );
       return res.status(200).json({
         success: true,

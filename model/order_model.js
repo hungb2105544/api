@@ -10,17 +10,29 @@ class OrderModel {
     try {
       let query = supabase
         .from("orders")
-        .select(this.SELECT_FIELDS)
+        .select(
+          `
+          *,
+          user_profiles (*),
+          user_addresses (
+            addresses (*)
+          ),
+          order_items (
+            *,
+            products (name, image_urls),
+            product_variants (
+              *,
+              product_variant_images (image_url)
+            )
+          )
+        `
+        )
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
       if (filters.status) {
         query = query.eq("status", filters.status);
       }
-      if (filters.user_id) {
-        query = query.eq("user_id", filters.user_id);
-      }
-
       const { data, error } = await query;
 
       if (error) {
@@ -39,7 +51,21 @@ class OrderModel {
       const { data, error } = await supabase
         .from("orders")
         .select(
-          `${this.SELECT_FIELDS}, order_items(id, product_id, variant_id, quantity, unit_price, discount_amount, line_total)`
+          `
+          *,
+          user_profiles (*),
+          user_addresses (
+            addresses (*)
+          ),
+          order_items (
+            *,
+            products (name, image_urls),
+            product_variants (
+              *,
+              product_variant_images (image_url)
+            )
+          )
+        `
         )
         .eq("id", id)
         .single();

@@ -157,7 +157,6 @@ class ProductVariantModel {
         throw new Error("Không thể thêm biến thể mới");
       }
 
-      // Ghi audit log cho INSERT
       await this.logAudit(
         "product_variants",
         createdVariant.id,
@@ -167,7 +166,6 @@ class ProductVariantModel {
         userId
       );
 
-      // Thêm bản ghi vào inventory cho mỗi chi nhánh
       const { data: branches, error: branchesError } = await supabase
         .from("branches")
         .select("id")
@@ -205,7 +203,6 @@ class ProductVariantModel {
       const variant = createdVariant;
       let imageRecords = [];
 
-      // Upload ảnh và lưu vào product_variant_images
       if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file, index) => {
           if (!file.path || !file.originalname || !file.mimetype) {
@@ -273,7 +270,6 @@ class ProductVariantModel {
         }
       }
 
-      // Lấy lại biến thể với ảnh mới
       const { data: updatedVariant, error: fetchUpdatedError } = await supabase
         .from("product_variants")
         .select(this.SELECT_FIELDS)
@@ -297,7 +293,6 @@ class ProductVariantModel {
 
   static async updateVariant(id, variantData, imageFiles = [], userId = null) {
     try {
-      // Kiểm tra biến thể tồn tại và đang hoạt động
       const { data: existingVariant, error: fetchError } = await supabase
         .from("product_variants")
         .select(this.SELECT_FIELDS)
@@ -316,7 +311,6 @@ class ProductVariantModel {
         throw new Error("Lỗi khi kiểm tra biến thể");
       }
 
-      // Xác thực khóa ngoại product_id nếu có
       if (variantData.product_id) {
         const { data: product, error: productError } = await supabase
           .from("products")
@@ -335,7 +329,6 @@ class ProductVariantModel {
         }
       }
 
-      // Xác thực khóa ngoại size_id nếu có
       if (variantData.size_id) {
         const { data: size, error: sizeError } = await supabase
           .from("sizes")
@@ -351,7 +344,6 @@ class ProductVariantModel {
         }
       }
 
-      // Kiểm tra SKU duy nhất nếu thay đổi
       if (variantData.sku && variantData.sku !== existingVariant.sku) {
         const { data: existingSku, error: skuError } = await supabase
           .from("product_variants")
@@ -367,7 +359,6 @@ class ProductVariantModel {
         }
       }
 
-      // Chuẩn bị dữ liệu cập nhật
       const updateData = {
         product_id: variantData.product_id || existingVariant.product_id,
         color: variantData.color || existingVariant.color,
@@ -378,7 +369,6 @@ class ProductVariantModel {
         updated_at: new Date().toISOString(),
       };
 
-      // Cập nhật inventory nếu product_id hoặc size_id thay đổi
       if (variantData.product_id || variantData.size_id) {
         const { error: inventoryError } = await supabase
           .from("inventory")
@@ -396,7 +386,6 @@ class ProductVariantModel {
         }
       }
 
-      // Xóa ảnh được chỉ định
       if (
         variantData.removeImageIds &&
         Array.isArray(variantData.removeImageIds)
@@ -443,7 +432,6 @@ class ProductVariantModel {
         }
       }
 
-      // Upload ảnh mới
       let imageRecords = [];
       if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file, index) => {
@@ -512,7 +500,6 @@ class ProductVariantModel {
         }
       }
 
-      // Cập nhật biến thể
       const { data: updatedVariant, error: updateError } = await supabase
         .from("product_variants")
         .update(updateData)
@@ -528,7 +515,6 @@ class ProductVariantModel {
         throw new Error("Không thể cập nhật biến thể");
       }
 
-      // Ghi audit log cho UPDATE
       await this.logAudit(
         "product_variants",
         id,
@@ -546,7 +532,6 @@ class ProductVariantModel {
   }
   static async deleteVariant(id, deleteImages = true, userId = null) {
     try {
-      // Kiểm tra biến thể tồn tại
       const { data: existingVariant, error: fetchError } = await supabase
         .from("product_variants")
         .select(this.SELECT_FIELDS)
@@ -564,7 +549,6 @@ class ProductVariantModel {
         throw new Error("Lỗi khi kiểm tra biến thể");
       }
 
-      // Xóa bản ghi liên quan trong order_items
       const { error: orderItemsError } = await supabase
         .from("order_items")
         .delete()
@@ -577,7 +561,6 @@ class ProductVariantModel {
         throw new Error("Không thể xóa bản ghi order_items liên quan");
       }
 
-      // Xóa bản ghi liên quan trong cart_items
       const { error: cartItemsError } = await supabase
         .from("cart_items")
         .delete()
@@ -590,7 +573,6 @@ class ProductVariantModel {
         throw new Error("Không thể xóa bản ghi cart_items liên quan");
       }
 
-      // Xóa bản ghi liên quan trong inventory
       const { error: inventoryError } = await supabase
         .from("inventory")
         .delete()
@@ -603,7 +585,6 @@ class ProductVariantModel {
         throw new Error("Không thể xóa bản ghi inventory liên quan");
       }
 
-      // Xóa ảnh trong Supabase Storage và product_variant_images
       if (
         deleteImages &&
         existingVariant.product_variant_images &&
@@ -637,7 +618,6 @@ class ProductVariantModel {
         }
       }
 
-      // Xóa cứng biến thể
       const { error: deleteError } = await supabase
         .from("product_variants")
         .delete()
@@ -648,7 +628,6 @@ class ProductVariantModel {
         throw new Error("Không thể xóa biến thể");
       }
 
-      // Ghi audit log cho DELETE
       await this.logAudit(
         "product_variants",
         id,

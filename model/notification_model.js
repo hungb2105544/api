@@ -2,15 +2,12 @@ const supabase = require("../supabaseClient");
 const messaging = require("../firebaseConfig");
 
 class NotificationModel {
-  // Tạo thông báo cập nhật trạng thái đơn hàng
   static async createOrderUpdateNotification(orderId, userId, status) {
     try {
-      // Kiểm tra dữ liệu đầu vào
       if (!orderId || !userId || !status) {
         throw new Error("Order ID, User ID, và trạng thái là bắt buộc");
       }
 
-      // Kiểm tra đơn hàng tồn tại
       const { data: order, error: orderError } = await supabase
         .from("orders")
         .select("id, order_number")
@@ -24,7 +21,6 @@ class NotificationModel {
         );
       }
 
-      // Lấy type_id cho notification_type = 'order'
       const { data: notificationType, error: typeError } = await supabase
         .from("notification_types")
         .select("id")
@@ -35,7 +31,6 @@ class NotificationModel {
         throw new Error('Loại thông báo "order" không tồn tại');
       }
 
-      // Tạo thông báo trong bảng notifications
       const { data: notification, error: notificationError } = await supabase
         .from("notifications")
         .insert({
@@ -58,7 +53,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi tạo thông báo: ${notificationError.message}`);
       }
 
-      // Lưu thông báo cho người dùng
       const { error: userNotificationError } = await supabase
         .from("user_notifications")
         .insert({
@@ -73,7 +67,6 @@ class NotificationModel {
         );
       }
 
-      // Lấy FCM token của người dùng
       const { data: devices, error: deviceError } = await supabase
         .from("user_devices")
         .select("fcm_token")
@@ -84,7 +77,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi lấy FCM token: ${deviceError.message}`);
       }
 
-      // Gửi thông báo qua FCM
       if (devices && devices.length > 0) {
         const tokens = devices.map((device) => device.fcm_token);
         const message = {
@@ -114,10 +106,8 @@ class NotificationModel {
     }
   }
 
-  // Tạo thông báo về voucher mới
   static async createVoucherNotification(voucherId) {
     try {
-      // Kiểm tra voucher tồn tại
       const { data: voucher, error: voucherError } = await supabase
         .from("vouchers")
         .select("id, name, code")
@@ -128,7 +118,6 @@ class NotificationModel {
         throw new Error("Voucher không tồn tại");
       }
 
-      // Lấy type_id cho notification_type = 'voucher'
       const { data: notificationType, error: typeError } = await supabase
         .from("notification_types")
         .select("id")
@@ -139,7 +128,6 @@ class NotificationModel {
         throw new Error('Loại thông báo "voucher" không tồn tại');
       }
 
-      // Tạo thông báo cho tất cả người dùng
       const { data: notification, error: notificationError } = await supabase
         .from("notifications")
         .insert({
@@ -160,7 +148,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi tạo thông báo: ${notificationError.message}`);
       }
 
-      // Lấy tất cả FCM token của người dùng
       const { data: devices, error: deviceError } = await supabase
         .from("user_devices")
         .select("fcm_token, user_id")
@@ -170,7 +157,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi lấy FCM token: ${deviceError.message}`);
       }
 
-      // Lưu thông báo cho tất cả người dùng
       if (devices && devices.length > 0) {
         const userNotifications = devices.map((device) => ({
           notification_id: notification.id,
@@ -188,7 +174,6 @@ class NotificationModel {
           );
         }
 
-        // Gửi thông báo qua FCM
         const tokens = devices.map((device) => device.fcm_token);
         const message = {
           notification: {
@@ -216,15 +201,12 @@ class NotificationModel {
     }
   }
 
-  // Tạo thông báo hệ thống
   static async createSystemNotification(title, content) {
     try {
-      // Kiểm tra dữ liệu đầu vào
       if (!title || !content) {
         throw new Error("Tiêu đề và nội dung thông báo là bắt buộc");
       }
 
-      // Lấy type_id cho notification_type = 'system'
       const { data: notificationType, error: typeError } = await supabase
         .from("notification_types")
         .select("id")
@@ -235,7 +217,6 @@ class NotificationModel {
         throw new Error('Loại thông báo "system" không tồn tại');
       }
 
-      // Tạo thông báo cho tất cả người dùng
       const { data: notification, error: notificationError } = await supabase
         .from("notifications")
         .insert({
@@ -254,7 +235,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi tạo thông báo: ${notificationError.message}`);
       }
 
-      // Lấy tất cả FCM token của người dùng
       const { data: devices, error: deviceError } = await supabase
         .from("user_devices")
         .select("fcm_token, user_id")
@@ -264,7 +244,6 @@ class NotificationModel {
         throw new Error(`Lỗi khi lấy FCM token: ${deviceError.message}`);
       }
 
-      // Lưu thông báo cho tất cả người dùng
       if (devices && devices.length > 0) {
         const userNotifications = devices.map((device) => ({
           notification_id: notification.id,
@@ -282,7 +261,6 @@ class NotificationModel {
           );
         }
 
-        // Gửi thông báo qua FCM
         const tokens = devices.map((device) => device.fcm_token);
         const message = {
           notification: {

@@ -5,7 +5,6 @@ class VoucherModel {
   static SELECT_FIELDS =
     "id, code, name, description, type, value, min_order_value, max_discount_amount, usage_limit, usage_limit_per_user, used_count, valid_from, valid_to, is_active, created_at";
 
-  // Lấy danh sách voucher với phân trang và bộ lọc
   static async getAllVouchers(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase
@@ -15,7 +14,6 @@ class VoucherModel {
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
-      // Áp dụng bộ lọc
       if (filters.type) {
         query = query.eq("type", filters.type);
       }
@@ -45,7 +43,6 @@ class VoucherModel {
     }
   }
 
-  // Lấy chi tiết voucher theo ID
   static async getVoucherById(id) {
     try {
       const { data, error } = await supabase
@@ -70,7 +67,6 @@ class VoucherModel {
     }
   }
 
-  // Tạo voucher mới
   static async createVoucher(voucherData) {
     const validTypes = ["percentage", "fixed_amount", "free_shipping"];
     if (
@@ -97,7 +93,6 @@ class VoucherModel {
     }
 
     try {
-      // Kiểm tra mã voucher duy nhất
       const { data: existingVoucher, error: checkError } = await supabase
         .from("vouchers")
         .select("id")
@@ -148,7 +143,6 @@ class VoucherModel {
     }
   }
 
-  // Cập nhật voucher
   static async updateVoucher(id, voucherData) {
     const validTypes = ["percentage", "fixed_amount", "free_shipping"];
     if (voucherData.type && !validTypes.includes(voucherData.type)) {
@@ -164,7 +158,6 @@ class VoucherModel {
     }
 
     try {
-      // Kiểm tra voucher tồn tại
       const { data: existingVoucher, error: fetchError } = await supabase
         .from("vouchers")
         .select(this.SELECT_FIELDS)
@@ -183,7 +176,6 @@ class VoucherModel {
         throw new Error("Lỗi khi kiểm tra voucher");
       }
 
-      // Kiểm tra mã voucher nếu thay đổi
       if (voucherData.code && voucherData.code !== existingVoucher.code) {
         const { data: codeCheck, error: checkError } = await supabase
           .from("vouchers")
@@ -202,7 +194,6 @@ class VoucherModel {
         }
       }
 
-      // Chuẩn bị dữ liệu cập nhật
       const updateData = {
         code: voucherData.code || existingVoucher.code,
         name: voucherData.name || existingVoucher.name,
@@ -220,7 +211,6 @@ class VoucherModel {
           existingVoucher.usage_limit_per_user,
         valid_from: voucherData.valid_from || existingVoucher.valid_from,
         valid_to: voucherData.valid_to || existingVoucher.valid_to,
-        updated_at: new Date().toISOString(),
       };
 
       const { data, error } = await supabase
@@ -242,10 +232,8 @@ class VoucherModel {
     }
   }
 
-  // Xóa voucher (soft delete)
   static async deleteVoucher(id) {
     try {
-      // Kiểm tra voucher tồn tại
       const { data: existingVoucher, error: fetchError } = await supabase
         .from("vouchers")
         .select("id, is_active")
@@ -263,7 +251,6 @@ class VoucherModel {
         throw new Error("Lỗi khi kiểm tra voucher");
       }
 
-      // Kiểm tra ràng buộc trong user_vouchers
       const { count, error: usageError } = await supabase
         .from("user_vouchers")
         .select("id", { count: "exact", head: true })
@@ -283,10 +270,9 @@ class VoucherModel {
         );
       }
 
-      // Thực hiện soft delete
       const { data, error } = await supabase
         .from("vouchers")
-        .update({ is_active: false, updated_at: new Date().toISOString() })
+        .update({ is_active: false })
         .eq("id", id)
         .select(this.SELECT_FIELDS)
         .single();

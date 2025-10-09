@@ -5,10 +5,13 @@ class ProductController {
   // Lấy danh sách sản phẩm
   static async getAllProducts(req, res) {
     try {
-      const { limit = 10, offset = 0 } = req.query;
+      const { limit = 10, offset = 0, name, brand_id, type_id } = req.query;
+
+      const filters = { name, brand_id, type_id };
       const products = await ProductModel.getAllProduct(
         parseInt(limit),
-        parseInt(offset)
+        parseInt(offset),
+        filters
       );
       return res.status(200).json({
         success: true,

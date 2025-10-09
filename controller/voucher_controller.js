@@ -1,7 +1,6 @@
 const VoucherModel = require("../model/voucher_model");
 
 class VoucherController {
-  // Lấy danh sách voucher
   static async getAllVouchers(req, res) {
     try {
       const { limit = 10, offset = 0, type, code, is_valid } = req.query;
@@ -28,7 +27,6 @@ class VoucherController {
     }
   }
 
-  // Lấy chi tiết voucher theo ID
   static async getVoucherById(req, res) {
     try {
       const { id } = req.params;
@@ -55,7 +53,6 @@ class VoucherController {
     }
   }
 
-  // Tạo voucher mới
   static async createVoucher(req, res) {
     try {
       const voucherData = req.body;
@@ -90,7 +87,6 @@ class VoucherController {
     }
   }
 
-  // Cập nhật voucher
   static async updateVoucher(req, res) {
     try {
       const { id } = req.params;
@@ -125,7 +121,6 @@ class VoucherController {
     }
   }
 
-  // Xóa voucher
   static async deleteVoucher(req, res) {
     try {
       const { id } = req.params;
