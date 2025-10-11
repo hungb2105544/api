@@ -1,41 +1,33 @@
 const supabase = require("../supabaseClient");
 
 class BranchModel {
-  static SELECT_FIELDS = `
-    id,
-    name,
-    phone,
-    email,
-    is_active,
-    created_at,
-    address:addresses (
-      *,
-      location:locations(*)
-    )
-  `;
+  static SELECT_FIELDS =
+    "id, name, phone, email, is_active, created_at, address_id, addresses(*)";
 
-  static async getAllBranches() {
+  static async getAllBranches(filters = {}) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from("branches")
-        .select(this.SELECT_FIELDS)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false });
+        .select(this.SELECT_FIELDS, { count: "exact" });
 
-      if (error) {
-        throw new Error(`Lỗi khi lấy danh sách chi nhánh: ${error.message}`);
+      if (typeof filters.is_active === "boolean") {
+        query = query.eq("is_active", filters.is_active);
       }
-      return data;
+
+      query = query.order("created_at", { ascending: false });
+
+      const { data, error, count } = await query;
+      if (error) throw new Error("Không thể lấy danh sách chi nhánh");
+
+      return { data, count };
     } catch (err) {
-      console.error("❌ Model - Lỗi trong getAllBranches:", err.message);
+      console.error("❌ Model - Lỗi khi lấy chi nhánh:", err.message);
       throw err;
     }
   }
 
   static async getBranchById(id) {
     try {
-      if (!id) throw new Error("ID chi nhánh là bắt buộc.");
-
       const { data, error } = await supabase
         .from("branches")
         .select(this.SELECT_FIELDS)
@@ -44,96 +36,82 @@ class BranchModel {
 
       if (error) {
         if (error.code === "PGRST116")
-          throw new Error("Không tìm thấy chi nhánh.");
-        throw new Error(`Lỗi khi lấy thông tin chi nhánh: ${error.message}`);
+          throw new Error("Không tìm thấy chi nhánh");
+        throw new Error("Lỗi khi lấy chi tiết chi nhánh");
       }
       return data;
     } catch (err) {
-      console.error("❌ Model - Lỗi trong getBranchById:", err.message);
+      console.error("❌ Model - Lỗi khi lấy chi tiết chi nhánh:", err.message);
       throw err;
     }
   }
 
   static async createBranch(branchData) {
+    const { name, phone, email, address } = branchData;
+    if (!name || !phone || !address) {
+      throw new Error("Tên, điện thoại và địa chỉ là bắt buộc");
+    }
+
     try {
-      const { name, phone, email, address, location } = branchData;
-      if (!name || !phone || !address || !location) {
-        throw new Error(
-          "Tên, SĐT, địa chỉ và tọa độ của chi nhánh là bắt buộc."
-        );
-      }
-      if (
-        !address.street ||
-        !address.ward ||
-        !address.district ||
-        !address.province
-      ) {
-        throw new Error("Thông tin địa chỉ không đầy đủ.");
-      }
-      if (
-        typeof location.latitude !== "number" ||
-        typeof location.longitude !== "number"
-      ) {
-        throw new Error("Thông tin tọa độ (latitude, longitude) không hợp lệ.");
-      }
+      // Sử dụng transaction để đảm bảo tính toàn vẹn dữ liệu
+      const { data, error } = await supabase.rpc("create_branch_with_address", {
+        p_name: name,
+        p_phone: phone,
+        p_email: email,
+        p_street: address.street,
+        p_ward: address.ward,
+        p_district: address.district,
+        p_province: address.province,
+        p_receiver_name: address.receiver_name,
+        p_receiver_phone: address.receiver_phone,
+      });
 
-      const { data, error } = await supabase.rpc(
-        "create_branch_with_address_and_location",
-        {
-          p_latitude: location.latitude,
-          p_longitude: location.longitude,
-          p_street: address.street,
-          p_ward: address.ward,
-          p_district: address.district,
-          p_province: address.province,
-          p_receiver_name: address.receiver_name || name,
-          p_receiver_phone: address.receiver_phone || phone,
-          p_branch_name: name,
-          p_branch_phone: phone,
-          p_branch_email: email,
-        }
-      );
-
-      if (error) {
-        throw new Error(`Không thể tạo chi nhánh trong CSDL: ${error.message}`);
-      }
-
-      const newBranchId = data[0].new_branch_id;
-      return this.getBranchById(newBranchId);
+      if (error) throw new Error("Không thể tạo chi nhánh: " + error.message);
+      return data;
     } catch (err) {
-      console.error("❌ Model - Lỗi trong createBranch:", err.message);
+      console.error("❌ Model - Lỗi khi tạo chi nhánh:", err.message);
       throw err;
     }
   }
 
-  static async updateBranch(id, updateData) {
+  static async updateBranch(id, branchData) {
+    const { name, phone, email, is_active, address, address_id } = branchData;
     try {
-      if (!id) throw new Error("ID chi nhánh là bắt buộc.");
+      // Cập nhật bảng addresses trước
+      if (address && address_id) {
+        const { error: addressError } = await supabase
+          .from("addresses")
+          .update(address)
+          .eq("id", address_id);
+        if (addressError)
+          throw new Error(
+            "Không thể cập nhật địa chỉ: " + addressError.message
+          );
+      }
 
-      const { name, phone, email, is_active } = updateData;
-      const { data, error } = await supabase
+      // Cập nhật bảng branches
+      const { data, error: branchError } = await supabase
         .from("branches")
         .update({ name, phone, email, is_active })
         .eq("id", id)
         .select(this.SELECT_FIELDS)
         .single();
 
-      if (error) {
-        if (error.code === "PGRST116")
-          throw new Error("Không tìm thấy chi nhánh để cập nhật.");
-        throw new Error(`Lỗi khi cập nhật chi nhánh: ${error.message}`);
-      }
+      if (branchError)
+        throw new Error("Không thể cập nhật chi nhánh: " + branchError.message);
       return data;
     } catch (err) {
-      console.error("❌ Model - Lỗi trong updateBranch:", err.message);
+      console.error(
+        `❌ Model - Lỗi khi cập nhật chi nhánh ${id}:`,
+        err.message
+      );
       throw err;
     }
   }
 
   static async deleteBranch(id) {
     try {
-      if (!id) throw new Error("ID chi nhánh là bắt buộc.");
-
+      // Soft delete bằng cách đặt is_active = false
       const { data, error } = await supabase
         .from("branches")
         .update({ is_active: false })
@@ -141,14 +119,10 @@ class BranchModel {
         .select("id")
         .single();
 
-      if (error) {
-        if (error.code === "PGRST116")
-          throw new Error("Không tìm thấy chi nhánh để xóa.");
-        throw new Error(`Lỗi khi xóa chi nhánh: ${error.message}`);
-      }
+      if (error) throw new Error("Không thể xóa chi nhánh");
       return data;
     } catch (err) {
-      console.error("❌ Model - Lỗi trong deleteBranch:", err.message);
+      console.error(`❌ Model - Lỗi khi xóa chi nhánh ${id}:`, err.message);
       throw err;
     }
   }

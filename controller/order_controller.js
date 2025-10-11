@@ -4,14 +4,17 @@ class OrderController {
   // Lấy danh sách đơn hàng
   static async getAllOrders(req, res) {
     try {
-      const { limit = 10, offset = 0, status, user_id } = req.query;
-      const orders = await OrderModel.getAllOrders(
-        parseInt(limit),
-        parseInt(offset)
+      const { limit = 10, offset = 0, ...filters } = req.query;
+      const { data, count } = await OrderModel.getAllOrders(
+        parseInt(limit, 10),
+        parseInt(offset, 10),
+        filters
       );
       return res.status(200).json({
         success: true,
-        data: orders,
+        message: "Lấy danh sách đơn hàng thành công",
+        data: data,
+        total: count,
       });
     } catch (error) {
       console.error(
@@ -29,14 +32,15 @@ class OrderController {
   static async getOrderById(req, res) {
     try {
       const { id } = req.params;
-      if (!id || isNaN(id)) {
+      const orderId = parseInt(id, 10);
+      if (!Number.isInteger(orderId) || orderId <= 0) {
         return res.status(400).json({
           success: false,
           message: "ID đơn hàng không hợp lệ",
         });
       }
 
-      const order = await OrderModel.getOrderById(id);
+      const order = await OrderModel.getOrderById(orderId);
       return res.status(200).json({
         success: true,
         data: order,
@@ -58,8 +62,9 @@ class OrderController {
       const { id } = req.params;
       const { status, comment } = req.body;
       const changedBy = req.user?.id || null; // Giả định user ID từ middleware xác thực
+      const orderId = parseInt(id, 10);
 
-      if (!id || isNaN(id)) {
+      if (!Number.isInteger(orderId) || orderId <= 0) {
         return res.status(400).json({
           success: false,
           message: "ID đơn hàng không hợp lệ",
@@ -73,7 +78,7 @@ class OrderController {
       }
 
       const updatedOrder = await OrderModel.updateOrderStatus(
-        id,
+        orderId,
         status,
         comment,
         changedBy
@@ -109,8 +114,9 @@ class OrderController {
       const { id } = req.params;
       const { comment } = req.body;
       const changedBy = req.user?.id || null; // Giả định user ID từ middleware xác thực
+      const orderId = parseInt(id, 10);
 
-      if (!id || isNaN(id)) {
+      if (!Number.isInteger(orderId) || orderId <= 0) {
         return res.status(400).json({
           success: false,
           message: "ID đơn hàng không hợp lệ",
@@ -118,7 +124,7 @@ class OrderController {
       }
 
       const cancelledOrder = await OrderModel.deleteOrder(
-        id,
+        orderId,
         comment,
         changedBy
       );
@@ -140,6 +146,27 @@ class OrderController {
           success: false,
           message: error.message || "Lỗi server khi hủy đơn hàng",
         });
+    }
+  }
+
+  // Thống kê đơn hàng
+  static async getOrderStats(req, res) {
+    try {
+      const stats = await OrderModel.getOrderStats();
+      return res.status(200).json({
+        success: true,
+        data: stats,
+        message: "Lấy thống kê đơn hàng thành công",
+      });
+    } catch (error) {
+      console.error(
+        "❌ Controller - Lỗi khi lấy thống kê đơn hàng:",
+        error.message
+      );
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi lấy thống kê đơn hàng",
+      });
     }
   }
 }

@@ -271,6 +271,29 @@ class InventoryController {
         });
     }
   }
+
+  // THÊM MỚI: Lấy thống kê tồn kho
+  static async getInventoryStats(req, res) {
+    try {
+      const { branch_id } = req.query;
+      const stats = await InventoryModel.getInventoryStats(
+        branch_id ? parseInt(branch_id) : null
+      );
+      return res.status(200).json({
+        success: true,
+        data: stats,
+      });
+    } catch (error) {
+      console.error(
+        "❌ Controller - Lỗi khi lấy thống kê tồn kho:",
+        error.message
+      );
+      return res.status(500).json({
+        success: false,
+        message: error.message || "Lỗi server khi lấy thống kê tồn kho",
+      });
+    }
+  }
 }
 
 module.exports = InventoryController;

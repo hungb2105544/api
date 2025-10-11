@@ -228,7 +228,7 @@ class InventoryModel {
         await this.logInventoryChange(
           "inventory",
           existingInventory.id,
-          "update",
+          "UPDATE",
           {
             quantity: existingInventory.quantity,
             reserved_quantity: existingInventory.reserved_quantity,
@@ -283,7 +283,7 @@ class InventoryModel {
         await this.logInventoryChange(
           "inventory",
           result.id,
-          "insert",
+          "INSERT",
           null,
           {
             branch_id: inventoryData.branch_id,
@@ -385,26 +385,14 @@ class InventoryModel {
         );
       }
 
-      const { data, error } = await supabase
-        .rpc("execute_transaction", {
-          query: `
-            BEGIN;
-            UPDATE inventory 
-            SET 
-              quantity = ${newQuantity},
-              reserved_quantity = ${newReservedQuantity},
-              updated_at = NOW()
-            WHERE id = ${inventory.id};
-            COMMIT;
-          `,
-        })
-        .then(async () => {
-          return supabase
-            .from("inventory")
-            .select(this.SELECT_FIELDS)
-            .eq("id", inventory.id)
-            .single();
-        });
+      // [SỬA LỖI] Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
+      const { data, error } = await supabase.rpc(
+        "decrease_inventory_and_return",
+        {
+          p_inventory_id: inventory.id,
+          p_quantity_to_decrease: quantity,
+        }
+      );
 
       if (error) {
         console.error("❌ Model - Lỗi khi giảm tồn kho:", error.message);
@@ -414,7 +402,7 @@ class InventoryModel {
       await this.logInventoryChange(
         "inventory",
         inventory.id,
-        "decrease",
+        "UPDATE",
         {
           quantity: inventory.quantity,
           reserved_quantity: inventory.reserved_quantity,
@@ -426,7 +414,8 @@ class InventoryModel {
         userId
       );
 
-      return data;
+      // RPC trả về một mảng, ta lấy phần tử đầu tiên
+      return data[0];
     } catch (error) {
       console.error("❌ Model - Lỗi khi giảm tồn kho:", error.message);
       throw error;
@@ -536,7 +525,7 @@ class InventoryModel {
         await this.logInventoryChange(
           "inventory",
           inventory.id,
-          "increase",
+          "UPDATE",
           { quantity: inventory.quantity },
           { quantity: newQuantity },
           userId
@@ -581,7 +570,7 @@ class InventoryModel {
         await this.logInventoryChange(
           "inventory",
           result.id,
-          "insert",
+          "INSERT",
           null,
           {
             branch_id: branchId,
@@ -683,26 +672,14 @@ class InventoryModel {
         );
       }
 
-      const { data, error } = await supabase
-        .rpc("execute_transaction", {
-          query: `
-            BEGIN;
-            UPDATE inventory 
-            SET 
-              quantity = ${newQuantity},
-              reserved_quantity = ${newReservedQuantity},
-              updated_at = NOW()
-            WHERE id = ${inventory.id};
-            COMMIT;
-          `,
-        })
-        .then(async () => {
-          return supabase
-            .from("inventory")
-            .select(this.SELECT_FIELDS)
-            .eq("id", inventory.id)
-            .single();
-        });
+      // [SỬA LỖI] Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
+      const { data, error } = await supabase.rpc(
+        "cancel_order_inventory_and_return",
+        {
+          p_inventory_id: inventory.id,
+          p_quantity_to_increase: quantity,
+        }
+      );
 
       if (error) {
         console.error("❌ Model - Lỗi khi hoàn tồn kho:", error.message);
@@ -712,7 +689,7 @@ class InventoryModel {
       await this.logInventoryChange(
         "inventory",
         inventory.id,
-        "cancel_order",
+        "UPDATE",
         {
           quantity: inventory.quantity,
           reserved_quantity: inventory.reserved_quantity,
@@ -724,7 +701,8 @@ class InventoryModel {
         userId
       );
 
-      return data;
+      // RPC trả về một mảng, ta lấy phần tử đầu tiên
+      return data[0];
     } catch (error) {
       console.error("❌ Model - Lỗi khi hoàn tồn kho:", error.message);
       throw error;
@@ -784,7 +762,7 @@ class InventoryModel {
       await this.logInventoryChange(
         "inventory",
         inventory.id,
-        "delete",
+        "UPDATE",
         { quantity: inventory.quantity },
         { quantity: 0 },
         userId
@@ -794,6 +772,98 @@ class InventoryModel {
     } catch (error) {
       console.error("❌ Model - Lỗi khi xóa tồn kho:", error.message);
       throw error;
+    }
+  }
+
+  // THÊM MỚI: Lấy thống kê tồn kho
+  static async getInventoryStats(branchId = null) {
+    try {
+      let query = supabase.rpc("get_inventory_stats", {
+        p_branch_id: branchId,
+      });
+
+      const { data, error } = await query;
+
+      if (error) {
+        console.error(
+          "❌ Model - Lỗi khi gọi RPC get_inventory_stats:",
+          error.message
+        );
+        throw new Error("Không thể lấy thống kê tồn kho");
+      }
+
+      // RPC trả về một mảng với một đối tượng duy nhất
+      const stats = data[0] || {
+        total_items: 0,
+        total_quantity: 0,
+        low_stock_items: 0,
+        out_of_stock_items: 0,
+      };
+
+      // Chuyển đổi các giá trị BigInt/String thành Number nếu cần
+      return {
+        total_items: Number(stats.total_items),
+        total_quantity: Number(stats.total_quantity),
+        low_stock_items: Number(stats.low_stock_items),
+        out_of_stock_items: Number(stats.out_of_stock_items),
+      };
+    } catch (err) {
+      console.error("❌ Model - Lỗi khi lấy thống kê tồn kho:", err.message);
+      throw err;
+    }
+  }
+
+  // THÊM MỚI: Kiểm tra tồn kho cho toàn bộ đơn hàng tại một chi nhánh
+  static async checkStockForOrder(branchId, orderItems) {
+    console.log(
+      `\n--- 🔍 Bắt đầu kiểm tra tồn kho cho đơn hàng tại Chi nhánh ID: ${branchId} ---`
+    );
+    if (!orderItems || orderItems.length === 0) return true; // Không có sản phẩm, coi như đủ hàng
+
+    try {
+      // Tạo một mảng các promise để kiểm tra tồn kho song song
+      const stockChecks = orderItems.map((item) => {
+        return supabase
+          .from("inventory")
+          .select("quantity")
+          .eq("branch_id", branchId)
+          .eq("product_id", item.products?.id) // Cần product_id từ item
+          .eq("variant_id", item.variant_id || null)
+          .single();
+      });
+
+      const results = await Promise.all(stockChecks);
+
+      // Kiểm tra kết quả
+      for (let i = 0; i < results.length; i++) {
+        const { data: inventory, error } = results[i];
+        const item = orderItems[i];
+        // Nếu không có bản ghi tồn kho hoặc số lượng không đủ
+        const requiredQty = item.quantity;
+        const availableQty = inventory?.quantity ?? 0;
+
+        console.log(
+          `  - Item: [P_ID: ${item.products?.id}, V_ID: ${
+            item.variant_id || "N/A"
+          }], Cần: ${requiredQty}, Có sẵn: ${availableQty}`
+        );
+
+        if (error || !inventory || availableQty < requiredQty) {
+          console.log(
+            `  ❌ KẾT QUẢ: KHÔNG ĐỦ HÀNG cho sản phẩm này. Dừng kiểm tra.`
+          );
+          return false; // Chi nhánh không đủ hàng
+        }
+      }
+
+      console.log(`  ✅ KẾT QUẢ: ĐỦ HÀNG cho tất cả sản phẩm.`);
+      return true; // Chi nhánh đủ hàng cho tất cả sản phẩm
+    } catch (err) {
+      console.error(
+        `❌ Model - Lỗi khi kiểm tra tồn kho cho đơn hàng tại chi nhánh ${branchId}:`,
+        err.message
+      );
+      return false; // Mặc định là không đủ hàng nếu có lỗi
     }
   }
 }
