@@ -95,7 +95,7 @@ class ProductVariantModel {
       const { data: product, error: productError } = await supabase
         .from("products")
         .select(
-          "id, name, brand_id, brands(brand_name), type_id, product_types(name)"
+          "id, name, brand_id, brands(brand_name), type_id, product_types(type_name)"
         )
         .eq("id", variantData.product_id)
         .eq("is_active", true)
@@ -205,7 +205,7 @@ class ProductVariantModel {
 
       if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file, index) => {
-          if (!file.path || !file.originalname || !file.mimetype) {
+          if (!file.buffer || !file.originalname || !file.mimetype) {
             console.warn("❌ Model - File không hợp lệ, bỏ qua:", file);
             return null;
           }
@@ -215,11 +215,9 @@ class ProductVariantModel {
 
           const { error: uploadError } = await supabase.storage
             .from("products")
-            .upload(filePath, fs.createReadStream(file.path), {
+            .upload(filePath, file.buffer, {
               contentType: file.mimetype,
-              duplex: "half",
             });
-
           if (uploadError) {
             console.error(
               "❌ Model - Lỗi khi upload ảnh:",
@@ -231,18 +229,6 @@ class ProductVariantModel {
           const { data: urlData } = supabase.storage
             .from("products")
             .getPublicUrl(filePath);
-
-          if (fs.existsSync(file.path)) {
-            try {
-              fs.unlinkSync(file.path);
-              console.log(`✅ Đã xóa file tạm: ${file.path}`);
-            } catch (err) {
-              console.error(
-                `❌ Lỗi khi xóa file tạm ${file.path}:`,
-                err.message
-              );
-            }
-          }
 
           return {
             variant_id: variant.id,
@@ -315,7 +301,7 @@ class ProductVariantModel {
         const { data: product, error: productError } = await supabase
           .from("products")
           .select(
-            "id, name, brand_id, brands(brand_name), type_id, product_types(name)"
+            "id, name, brand_id, brands(brand_name), type_id, product_types(type_name)"
           )
           .eq("id", variantData.product_id)
           .eq("is_active", true)
@@ -362,9 +348,8 @@ class ProductVariantModel {
       const updateData = {
         product_id: variantData.product_id || existingVariant.product_id,
         color: variantData.color || existingVariant.color,
+        price: variantData.price ?? existingVariant.price, // Sửa thành price
         sku: variantData.sku || existingVariant.sku,
-        additional_price:
-          variantData.additional_price ?? existingVariant.additional_price,
         size_id: variantData.size_id || existingVariant.size_id,
         updated_at: new Date().toISOString(),
       };
@@ -435,7 +420,7 @@ class ProductVariantModel {
       let imageRecords = [];
       if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file, index) => {
-          if (!file.path || !file.originalname || !file.mimetype) {
+          if (!file.buffer || !file.originalname || !file.mimetype) {
             console.warn("❌ Model - File không hợp lệ, bỏ qua:", file);
             return null;
           }
@@ -445,7 +430,7 @@ class ProductVariantModel {
 
           const { error: uploadError } = await supabase.storage
             .from("products")
-            .upload(filePath, fs.createReadStream(file.path), {
+            .upload(filePath, file.buffer, {
               contentType: file.mimetype,
               duplex: "half",
             });
@@ -461,18 +446,6 @@ class ProductVariantModel {
           const { data: urlData } = supabase.storage
             .from("products")
             .getPublicUrl(filePath);
-
-          if (fs.existsSync(file.path)) {
-            try {
-              fs.unlinkSync(file.path);
-              console.log(`✅ Đã xóa file tạm: ${file.path}`);
-            } catch (err) {
-              console.error(
-                `❌ Lỗi khi xóa file tạm ${file.path}:`,
-                err.message
-              );
-            }
-          }
 
           return {
             variant_id: id,

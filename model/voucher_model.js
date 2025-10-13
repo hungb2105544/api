@@ -217,8 +217,7 @@ class VoucherModel {
         .from("vouchers")
         .update(updateData)
         .eq("id", id)
-        .select(this.SELECT_FIELDS)
-        .single();
+        .select(this.SELECT_FIELDS);
 
       if (error) {
         console.error("❌ Model - Lỗi khi cập nhật voucher:", error.message);
@@ -227,6 +226,7 @@ class VoucherModel {
 
       return data;
     } catch (error) {
+      // @ts-ignore
       console.error("❌ Model - Lỗi khi cập nhật voucher:", error.message);
       throw error;
     }

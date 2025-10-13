@@ -102,6 +102,32 @@ class ProductModel {
         throw new Error(`Không thể thêm sản phẩm mới: ${insertError.message}`);
       }
 
+      // THÊM MỚI: Xử lý lưu các size của sản phẩm
+      if (
+        productData.sizes &&
+        Array.isArray(productData.sizes) &&
+        productData.sizes.length > 0
+      ) {
+        const productSizeRecords = productData.sizes.map((sizeId) => ({
+          product_id: createdProduct.id,
+          size_id: parseInt(sizeId),
+        }));
+
+        const { error: sizeError } = await supabase
+          .from("product_sizes")
+          .insert(productSizeRecords);
+
+        if (sizeError) {
+          // Nếu có lỗi, nên có cơ chế rollback hoặc ít nhất là log lại
+          console.error(
+            "❌ Model - Lỗi khi lưu các size của sản phẩm:",
+            sizeError.message
+          );
+          // Có thể throw lỗi ở đây để transaction thất bại nếu có
+          throw new Error("Không thể lưu các kích thước cho sản phẩm.");
+        }
+      }
+
       const product = createdProduct;
       let imageUrls = [];
 
@@ -266,13 +292,19 @@ class ProductModel {
 
       if (imageFiles && imageFiles.length > 0) {
         const uploadPromises = imageFiles.map(async (file) => {
-          if (!file.buffer) return null;
+          if (!file.buffer || !file.originalname || !file.mimetype) {
+            console.warn("❌ Model - File không hợp lệ, bỏ qua:", file);
+            return null;
+          }
           const fileName = `${uuidv4()}-${file.originalname}`;
           const filePath = `product_${id}/${fileName}`;
 
           const { error: uploadError } = await supabase.storage
             .from("products")
-            .upload(filePath, file.buffer, { contentType: file.mimetype });
+            .upload(filePath, file.buffer, {
+              contentType: file.mimetype,
+              duplex: "half",
+            });
 
           if (uploadError) {
             console.error("❌ Lỗi upload ảnh mới:", uploadError.message);
@@ -411,7 +443,8 @@ class ProductModel {
           *,
           brands(*),
           product_types(*),
-          product_variants(*, sizes(*))
+          product_variants(*, sizes(*), product_variant_images(*)),
+          product_sizes(*, sizes(*))
         `
         )
         .eq("id", id)
@@ -454,6 +487,7 @@ class ProductModel {
       throw error;
     }
   }
+
   static async deleteProduct(id) {
     try {
       const { data, error } = await supabase

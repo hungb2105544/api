@@ -11,7 +11,7 @@ class OrderModel {
     user_profiles(*),
     user_addresses(addresses(*)),
     order_items (
-      id, quantity, variant_id,
+      id, quantity, product_id, variant_id,
       products (id, name, image_urls, sku),
       product_variants (
         *,
@@ -21,8 +21,6 @@ class OrderModel {
   `;
   static async getAllOrders(limit = 10, offset = 0, filters = {}) {
     try {
-      // [TỐI ƯU HÓA] Tạo một câu lệnh SELECT gọn nhẹ hơn chỉ dành cho trang danh sách.
-      // Chỉ lấy những thông tin cần thiết để hiển thị.
       const LIST_VIEW_FIELDS = `
         id,
         order_number,
@@ -101,6 +99,7 @@ class OrderModel {
         if (error.code === "PGRST116") {
           throw new Error("Không tìm thấy đơn hàng");
         }
+        console.error("❌ Model - Lỗi Supabase:", error.message);
         throw new Error("Lỗi khi lấy đơn hàng");
       }
 
@@ -235,43 +234,29 @@ class OrderModel {
       );
     }
 
-    // 2. Lấy danh sách tất cả chi nhánh đang hoạt động và có tọa độ
-    const { data: branches, error: branchError } = await supabase
-      .from("branches")
-      .select(
-        "id, addresses!inner(location_id, locations(latitude, longitude))"
-      )
-      .eq("is_active", true)
-      .not("addresses.location_id", "is", null);
+    // 2. [TỐI ƯU] Lấy danh sách chi nhánh đã sắp xếp theo khoảng cách qua RPC
+    const { data: sortedBranches, error: rpcError } = await supabase.rpc(
+      "get_sorted_branches_by_distance",
+      {
+        customer_lat: customerLocation.latitude,
+        customer_lon: customerLocation.longitude,
+      }
+    );
 
-    if (branchError || !branches || branches.length === 0) {
+    if (rpcError || !sortedBranches || sortedBranches.length === 0) {
       throw new Error(
-        "Không có chi nhánh nào đang hoạt động hoặc có thông tin vị trí."
+        rpcError?.message ||
+          "Không thể tìm thấy chi nhánh phù hợp hoặc có lỗi khi tính khoảng cách."
       );
     }
 
-    // 3. Sắp xếp chi nhánh theo khoảng cách từ gần đến xa
-    const sortedBranches = branches.map((branch) => {
-      const branchLocation = branch.addresses.locations;
-      const distance = supabase.rpc("haversine_distance", {
-        lat1: customerLocation.latitude,
-        lon1: customerLocation.longitude,
-        lat2: branchLocation.latitude,
-        lon2: branchLocation.longitude,
-      }); // RPC call is async, but we can structure it like this
-      return { branchId: branch.id, distancePromise: distance };
-    });
+    console.log(
+      `✅ Tìm thấy ${sortedBranches.length} chi nhánh qua RPC, đang kiểm tra kho...`
+    );
 
-    // Resolve all distance promises
-    for (const branch of sortedBranches) {
-      const { data, error } = await branch.distancePromise;
-      if (error) throw new Error(`Lỗi tính khoảng cách: ${error.message}`);
-      branch.distance = data;
-    }
-    sortedBranches.sort((a, b) => a.distance - b.distance);
-
-    // 4. Duyệt qua các chi nhánh đã sắp xếp để tìm chi nhánh đủ hàng
-    for (const { branchId } of sortedBranches) {
+    // 3. Duyệt qua các chi nhánh đã sắp xếp để tìm chi nhánh đủ hàng
+    for (const { branch_id: branchId } of sortedBranches) {
+      // Sửa đổi: Dùng branch_id từ kết quả RPC
       const hasStock = await InventoryModel.checkStockForOrder(
         branchId,
         order.order_items
@@ -284,7 +269,7 @@ class OrderModel {
         for (const item of order.order_items) {
           await InventoryModel.decreaseInventory(
             branchId,
-            item.products.id, // Lỗi ở đây, cần product_id
+            item.product_id, // SỬA LỖI: Dùng product_id từ order_items
             item.variant_id,
             item.quantity
           );
@@ -303,7 +288,7 @@ class OrderModel {
           for (const item of order.order_items) {
             await InventoryModel.cancelOrderInventory(
               branchId,
-              item.products.id,
+              item.product_id, // SỬA LỖI: Dùng product_id nhất quán
               item.variant_id,
               item.quantity
             );

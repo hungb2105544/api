@@ -5,6 +5,14 @@ class InventoryModel {
   static SELECT_FIELDS =
     "id, product_id, variant_id, branch_id, quantity, reserved_quantity, min_stock_level, max_stock_level, updated_at, products(name), branches(name), product_variants(color)";
 
+  // Hàm tiện ích để xử lý variantId
+  static _processVariantId(variantId) {
+    if (variantId === "null" || variantId === "" || variantId === undefined) {
+      return null;
+    }
+    return variantId;
+  }
+
   static async logInventoryChange(
     tableName,
     recordId,
@@ -14,6 +22,9 @@ class InventoryModel {
     userId = null
   ) {
     try {
+      console.log(
+        `[AUDIT] Ghi log: Action=${action}, Table=${tableName}, RecordID=${recordId}`
+      );
       const { error } = await supabase.from("audit_logs").insert({
         table_name: tableName,
         record_id: recordId,
@@ -101,6 +112,9 @@ class InventoryModel {
   }
 
   static async upsertInventory(inventoryData, userId = null) {
+    // Xử lý variant_id
+    inventoryData.variant_id = this._processVariantId(inventoryData.variant_id);
+
     if (
       !inventoryData.branch_id ||
       !inventoryData.product_id ||
@@ -150,15 +164,26 @@ class InventoryModel {
         }
       }
 
-      const { data: existingInventory, error: checkError } = await supabase
+      // Xây dựng query linh hoạt cho variant_id
+      let existingQuery = supabase
         .from("inventory")
         .select(
           "id, quantity, reserved_quantity, min_stock_level, max_stock_level"
         )
         .eq("branch_id", inventoryData.branch_id)
-        .eq("product_id", inventoryData.product_id)
-        .eq("variant_id", inventoryData.variant_id || null)
-        .single();
+        .eq("product_id", inventoryData.product_id);
+
+      if (inventoryData.variant_id === null) {
+        existingQuery = existingQuery.is("variant_id", null);
+      } else {
+        existingQuery = existingQuery.eq(
+          "variant_id",
+          inventoryData.variant_id
+        );
+      }
+
+      const { data: existingInventory, error: checkError } =
+        await existingQuery.single();
 
       if (checkError && checkError.code !== "PGRST116") {
         console.error(
@@ -265,13 +290,22 @@ class InventoryModel {
             `,
           })
           .then(async () => {
-            return supabase
+            let newRecordQuery = supabase
               .from("inventory")
               .select(this.SELECT_FIELDS)
               .eq("branch_id", inventoryData.branch_id)
-              .eq("product_id", inventoryData.product_id)
-              .eq("variant_id", inventoryData.variant_id || null)
-              .single();
+              .eq("product_id", inventoryData.product_id);
+
+            if (inventoryData.variant_id === null) {
+              newRecordQuery = newRecordQuery.is("variant_id", null);
+            } else {
+              newRecordQuery = newRecordQuery.eq(
+                "variant_id",
+                inventoryData.variant_id
+              );
+            }
+
+            return newRecordQuery.single();
           });
 
         if (error) {
@@ -305,6 +339,65 @@ class InventoryModel {
     }
   }
 
+  // Hàm private để kiểm tra điều kiện tiên quyết
+  static async _validateInventoryPrerequisites(
+    branchId,
+    productId,
+    variantId = null
+  ) {
+    // Xử lý variantId
+    variantId = this._processVariantId(variantId);
+
+    console.log(
+      `[VALIDATE] Bắt đầu xác thực: Branch=${branchId}, Product=${productId}, Variant=${
+        variantId || "N/A"
+      }`
+    );
+    const checks = [
+      supabase
+        .from("branches")
+        .select("id")
+        .eq("id", branchId)
+        .eq("is_active", true)
+        .single(),
+      supabase
+        .from("products")
+        .select("id")
+        .eq("id", productId)
+        .eq("is_active", true)
+        .single(),
+    ];
+
+    if (variantId) {
+      checks.push(
+        supabase
+          .from("product_variants")
+          .select("id")
+          .eq("id", variantId)
+          .eq("is_active", true)
+          .single()
+      );
+    }
+
+    const [branchResult, productResult, variantResult] = await Promise.all(
+      checks
+    );
+
+    if (branchResult.error || !branchResult.data) {
+      console.error(`[VALIDATE] ❌ Lỗi: Chi nhánh ${branchId} không hợp lệ.`);
+      throw new Error("Chi nhánh không tồn tại hoặc không hoạt động");
+    }
+    if (productResult.error || !productResult.data) {
+      console.error(`[VALIDATE] ❌ Lỗi: Sản phẩm ${productId} không hợp lệ.`);
+      throw new Error("Sản phẩm không tồn tại hoặc không hoạt động");
+    }
+    if (variantId && (variantResult.error || !variantResult.data)) {
+      console.error(`[VALIDATE] ❌ Lỗi: Biến thể ${variantId} không hợp lệ.`);
+      throw new Error("Biến thể sản phẩm không tồn tại hoặc không hoạt động");
+    }
+    console.log(`[VALIDATE] ✅ Xác thực thành công.`);
+  }
+
   static async decreaseInventory(
     branchId,
     productId,
@@ -312,58 +405,52 @@ class InventoryModel {
     quantity,
     userId = null
   ) {
+    // Xử lý variantId
+    variantId = this._processVariantId(variantId);
+
+    console.log(
+      `[DECREASE] Bắt đầu giảm kho: Branch=${branchId}, Product=${productId}, Variant=${
+        variantId || "N/A"
+      }, Qty=${quantity}`
+    );
+
     if (!branchId || !productId || !quantity || quantity <= 0) {
       throw new Error("Chi nhánh, sản phẩm và số lượng (> 0) là bắt buộc");
     }
 
     try {
-      const { data: branch, error: branchError } = await supabase
-        .from("branches")
-        .select("id")
-        .eq("id", branchId)
-        .eq("is_active", true)
-        .single();
-      if (branchError || !branch) {
-        throw new Error("Chi nhánh không tồn tại hoặc không hoạt động");
-      }
+      // Sử dụng hàm validation chung
+      await this._validateInventoryPrerequisites(
+        branchId,
+        productId,
+        variantId
+      );
 
-      const { data: product, error: productError } = await supabase
-        .from("products")
-        .select("id")
-        .eq("id", productId)
-        .eq("is_active", true)
-        .single();
-      if (productError || !product) {
-        throw new Error("Sản phẩm không tồn tại hoặc không hoạt động");
-      }
+      console.log(`[DECREASE] Đang kiểm tra bản ghi tồn kho hiện tại...`);
 
-      if (variantId) {
-        const { data: variant, error: variantError } = await supabase
-          .from("product_variants")
-          .select("id")
-          .eq("id", variantId)
-          .eq("is_active", true)
-          .single();
-        if (variantError || !variant) {
-          throw new Error(
-            "Biến thể sản phẩm không tồn tại hoặc không hoạt động"
-          );
-        }
-      }
-
-      const { data: inventory, error: fetchError } = await supabase
+      // XÂY DỰNG QUERY LINH HOẠT ĐỂ XỬ LÝ CẢ NULL VÀ CÓ GIÁ TRỊ
+      let query = supabase
         .from("inventory")
         .select(
           "id, quantity, reserved_quantity, min_stock_level, max_stock_level"
         )
         .eq("branch_id", branchId)
-        .eq("product_id", productId)
-        .eq("variant_id", variantId || null)
-        .single();
+        .eq("product_id", productId);
+
+      // XỬ LÝ VARIANT_ID ĐÚNG CÁCH
+      if (variantId === null) {
+        query = query.is("variant_id", null);
+      } else {
+        query = query.eq("variant_id", variantId);
+      }
+
+      const { data: inventory, error: fetchError } = await query.single();
 
       if (fetchError || !inventory) {
         if (fetchError && fetchError.code === "PGRST116") {
-          throw new Error("Không tìm thấy bản ghi tồn kho");
+          throw new Error(
+            `Không tìm thấy bản ghi tồn kho cho Product ${productId} tại Branch ${branchId}`
+          );
         }
         console.error(
           "❌ Model - Lỗi khi kiểm tra tồn kho:",
@@ -373,7 +460,9 @@ class InventoryModel {
       }
 
       if (inventory.quantity < quantity) {
-        throw new Error("Số lượng tồn kho không đủ");
+        throw new Error(
+          `Số lượng tồn kho không đủ. Cần ${quantity}, có ${inventory.quantity}`
+        );
       }
 
       const newQuantity = inventory.quantity - quantity;
@@ -385,7 +474,8 @@ class InventoryModel {
         );
       }
 
-      // [SỬA LỖI] Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
+      console.log(`[DECREASE] Đang gọi RPC để giảm kho...`);
+      // Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
       const { data, error } = await supabase.rpc(
         "decrease_inventory_and_return",
         {
@@ -399,6 +489,7 @@ class InventoryModel {
         throw new Error("Không thể giảm tồn kho");
       }
 
+      console.log(`[DECREASE] ✅ Giảm kho thành công.`);
       await this.logInventoryChange(
         "inventory",
         inventory.id,
@@ -429,54 +520,43 @@ class InventoryModel {
     quantity,
     userId = null
   ) {
+    // Xử lý variantId
+    variantId = this._processVariantId(variantId);
+
+    console.log(
+      `[INCREASE] Bắt đầu tăng kho: Branch=${branchId}, Product=${productId}, Variant=${
+        variantId || "N/A"
+      }, Qty=${quantity}`
+    );
     if (!branchId || !productId || !quantity || quantity <= 0) {
       throw new Error("Chi nhánh, sản phẩm và số lượng (> 0) là bắt buộc");
     }
 
     try {
-      const { data: branch, error: branchError } = await supabase
-        .from("branches")
-        .select("id")
-        .eq("id", branchId)
-        .eq("is_active", true)
-        .single();
-      if (branchError || !branch) {
-        throw new Error("Chi nhánh không tồn tại hoặc không hoạt động");
-      }
+      // Sử dụng hàm validation chung
+      await this._validateInventoryPrerequisites(
+        branchId,
+        productId,
+        variantId
+      );
 
-      const { data: product, error: productError } = await supabase
-        .from("products")
-        .select("id")
-        .eq("id", productId)
-        .eq("is_active", true)
-        .single();
-      if (productError || !product) {
-        throw new Error("Sản phẩm không tồn tại hoặc không hoạt động");
-      }
+      console.log(`[INCREASE] Đang kiểm tra bản ghi tồn kho hiện tại...`);
 
-      if (variantId) {
-        const { data: variant, error: variantError } = await supabase
-          .from("product_variants")
-          .select("id")
-          .eq("id", variantId)
-          .eq("is_active", true)
-          .single();
-        if (variantError || !variant) {
-          throw new Error(
-            "Biến thể sản phẩm không tồn tại hoặc không hoạt động"
-          );
-        }
-      }
-
-      const { data: inventory, error: fetchError } = await supabase
+      let query = supabase
         .from("inventory")
         .select(
           "id, quantity, reserved_quantity, min_stock_level, max_stock_level"
         )
         .eq("branch_id", branchId)
-        .eq("product_id", productId)
-        .eq("variant_id", variantId || null)
-        .single();
+        .eq("product_id", productId);
+
+      if (variantId === null) {
+        query = query.is("variant_id", null);
+      } else {
+        query = query.eq("variant_id", variantId);
+      }
+
+      const { data: inventory, error: fetchError } = await query.maybeSingle();
 
       if (fetchError && fetchError.code !== "PGRST116") {
         console.error(
@@ -489,6 +569,9 @@ class InventoryModel {
       let result;
       if (inventory) {
         const newQuantity = inventory.quantity + quantity;
+        console.log(
+          `[INCREASE] Bản ghi đã tồn tại. Cập nhật số lượng từ ${inventory.quantity} -> ${newQuantity}`
+        );
 
         if (newQuantity > inventory.max_stock_level) {
           throw new Error(
@@ -496,6 +579,7 @@ class InventoryModel {
           );
         }
 
+        console.log(`[INCREASE] Đang gọi RPC để cập nhật...`);
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -522,6 +606,7 @@ class InventoryModel {
         }
         result = data;
 
+        console.log(`[INCREASE] ✅ Tăng kho thành công.`);
         await this.logInventoryChange(
           "inventory",
           inventory.id,
@@ -531,6 +616,9 @@ class InventoryModel {
           userId
         );
       } else {
+        console.log(
+          `[INCREASE] Bản ghi chưa tồn tại. Tạo mới với số lượng ${quantity}`
+        );
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -552,13 +640,19 @@ class InventoryModel {
             `,
           })
           .then(async () => {
-            return supabase
+            let newRecordQuery = supabase
               .from("inventory")
               .select(this.SELECT_FIELDS)
               .eq("branch_id", branchId)
-              .eq("product_id", productId)
-              .eq("variant_id", variantId || null)
-              .single();
+              .eq("product_id", productId);
+
+            if (variantId === null) {
+              newRecordQuery = newRecordQuery.is("variant_id", null);
+            } else {
+              newRecordQuery = newRecordQuery.eq("variant_id", variantId);
+            }
+
+            return newRecordQuery.single();
           });
 
         if (error) {
@@ -567,6 +661,7 @@ class InventoryModel {
         }
         result = data;
 
+        console.log(`[INCREASE] ✅ Tạo và tăng kho thành công.`);
         await this.logInventoryChange(
           "inventory",
           result.id,
@@ -599,58 +694,49 @@ class InventoryModel {
     quantity,
     userId = null
   ) {
+    // Xử lý variantId
+    variantId = this._processVariantId(variantId);
+
+    console.log(
+      `[CANCEL] Bắt đầu hoàn kho: Branch=${branchId}, Product=${productId}, Variant=${
+        variantId || "N/A"
+      }, Qty=${quantity}`
+    );
     if (!branchId || !productId || !quantity || quantity <= 0) {
       throw new Error("Chi nhánh, sản phẩm và số lượng (> 0) là bắt buộc");
     }
 
     try {
-      const { data: branch, error: branchError } = await supabase
-        .from("branches")
-        .select("id")
-        .eq("id", branchId)
-        .eq("is_active", true)
-        .single();
-      if (branchError || !branch) {
-        throw new Error("Chi nhánh không tồn tại hoặc không hoạt động");
-      }
+      // Sử dụng hàm validation chung
+      await this._validateInventoryPrerequisites(
+        branchId,
+        productId,
+        variantId
+      );
 
-      const { data: product, error: productError } = await supabase
-        .from("products")
-        .select("id")
-        .eq("id", productId)
-        .eq("is_active", true)
-        .single();
-      if (productError || !product) {
-        throw new Error("Sản phẩm không tồn tại hoặc không hoạt động");
-      }
+      console.log(`[CANCEL] Đang kiểm tra bản ghi tồn kho hiện tại...`);
 
-      if (variantId) {
-        const { data: variant, error: variantError } = await supabase
-          .from("product_variants")
-          .select("id")
-          .eq("id", variantId)
-          .eq("is_active", true)
-          .single();
-        if (variantError || !variant) {
-          throw new Error(
-            "Biến thể sản phẩm không tồn tại hoặc không hoạt động"
-          );
-        }
-      }
-
-      const { data: inventory, error: fetchError } = await supabase
+      let query = supabase
         .from("inventory")
         .select(
           "id, quantity, reserved_quantity, min_stock_level, max_stock_level"
         )
         .eq("branch_id", branchId)
-        .eq("product_id", productId)
-        .eq("variant_id", variantId || null)
-        .single();
+        .eq("product_id", productId);
+
+      if (variantId === null) {
+        query = query.is("variant_id", null);
+      } else {
+        query = query.eq("variant_id", variantId);
+      }
+
+      const { data: inventory, error: fetchError } = await query.single();
 
       if (fetchError || !inventory) {
         if (fetchError && fetchError.code === "PGRST116") {
-          throw new Error("Không tìm thấy bản ghi tồn kho");
+          throw new Error(
+            `Không tìm thấy bản ghi tồn kho để hoàn cho Product ${productId} tại Branch ${branchId}`
+          );
         }
         console.error(
           "❌ Model - Lỗi khi kiểm tra tồn kho:",
@@ -660,7 +746,9 @@ class InventoryModel {
       }
 
       if (inventory.reserved_quantity < quantity) {
-        throw new Error("Số lượng giữ chỗ không đủ để hoàn");
+        throw new Error(
+          `Số lượng giữ chỗ không đủ để hoàn. Cần hoàn ${quantity}, đang giữ ${inventory.reserved_quantity}`
+        );
       }
 
       const newQuantity = inventory.quantity + quantity;
@@ -672,7 +760,8 @@ class InventoryModel {
         );
       }
 
-      // [SỬA LỖI] Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
+      console.log(`[CANCEL] Đang gọi RPC để hoàn kho...`);
+      // Sử dụng RPC chuyên dụng để đảm bảo tính toàn vẹn dữ liệu
       const { data, error } = await supabase.rpc(
         "cancel_order_inventory_and_return",
         {
@@ -686,6 +775,7 @@ class InventoryModel {
         throw new Error("Không thể hoàn tồn kho");
       }
 
+      console.log(`[CANCEL] ✅ Hoàn kho thành công.`);
       await this.logInventoryChange(
         "inventory",
         inventory.id,
@@ -775,7 +865,7 @@ class InventoryModel {
     }
   }
 
-  // THÊM MỚI: Lấy thống kê tồn kho
+  // Lấy thống kê tồn kho
   static async getInventoryStats(branchId = null) {
     try {
       let query = supabase.rpc("get_inventory_stats", {
@@ -813,57 +903,121 @@ class InventoryModel {
     }
   }
 
-  // THÊM MỚI: Kiểm tra tồn kho cho toàn bộ đơn hàng tại một chi nhánh
   static async checkStockForOrder(branchId, orderItems) {
     console.log(
       `\n--- 🔍 Bắt đầu kiểm tra tồn kho cho đơn hàng tại Chi nhánh ID: ${branchId} ---`
     );
-    if (!orderItems || orderItems.length === 0) return true; // Không có sản phẩm, coi như đủ hàng
+
+    if (!orderItems || orderItems.length === 0) {
+      console.log("⚠️ Không có sản phẩm nào trong đơn hàng.");
+      return true;
+    }
+
+    // 🔧 Làm sạch dữ liệu để đảm bảo không còn "null" (string)
+    orderItems = orderItems.map((item, idx) => {
+      const productId =
+        item.product_id === null ||
+        item.product_id === "null" ||
+        item.product_id === "" ||
+        item.product_id === undefined
+          ? null
+          : Number(item.product_id);
+
+      const variantId =
+        item.variant_id === null ||
+        item.variant_id === "null" ||
+        item.variant_id === "" ||
+        item.variant_id === undefined
+          ? null
+          : Number(item.variant_id);
+
+      console.log(
+        `  🧾 Item ${
+          idx + 1
+        }: product_id=${productId} (${typeof productId}), variant_id=${variantId} (${typeof variantId})`
+      );
+
+      return {
+        ...item,
+        product_id: productId,
+        variant_id: variantId,
+        quantity: Number(item.quantity) || 0,
+      };
+    });
+
+    console.log("Du lieu sau khi xu li");
+    console.log(orderItems);
 
     try {
-      // Tạo một mảng các promise để kiểm tra tồn kho song song
       const stockChecks = orderItems.map((item) => {
-        return supabase
+        const { product_id: productId, variant_id: variantId } = item;
+
+        let query = supabase
           .from("inventory")
-          .select("quantity")
-          .eq("branch_id", branchId)
-          .eq("product_id", item.products?.id) // Cần product_id từ item
-          .eq("variant_id", item.variant_id || null)
-          .single();
+          .select(
+            "id, quantity, reserved_quantity, min_stock_level, max_stock_level"
+          )
+          .eq("branch_id", branchId);
+
+        // ✅ Phân biệt rõ giữa null thật và có giá trị
+        if (productId === null) query = query.is("product_id", null);
+        else query = query.eq("product_id", productId);
+
+        if (variantId === null) query = query.is("variant_id", null);
+        else query = query.eq("variant_id", variantId);
+
+        console.log(
+          `  📦 Query: branch=${branchId}, product_id=${productId}, variant_id=${variantId}`
+        );
+
+        return query.maybeSingle();
       });
 
       const results = await Promise.all(stockChecks);
 
-      // Kiểm tra kết quả
       for (let i = 0; i < results.length; i++) {
         const { data: inventory, error } = results[i];
         const item = orderItems[i];
-        // Nếu không có bản ghi tồn kho hoặc số lượng không đủ
-        const requiredQty = item.quantity;
-        const availableQty = inventory?.quantity ?? 0;
+
+        if (error) {
+          console.log("❌ Query error:", error);
+          return false;
+        }
+
+        if (!inventory) {
+          console.log(
+            `❌ Không tìm thấy tồn kho cho sản phẩm [P_ID=${item.product_id}, V_ID=${item.variant_id}]`
+          );
+          return false;
+        }
+
+        const availableQty = inventory.quantity ?? 0;
+        const reservedQty = inventory.reserved_quantity ?? 0;
+        const actualAvailable = availableQty - reservedQty;
+        const requiredQty = Number(item.quantity);
 
         console.log(
-          `  - Item: [P_ID: ${item.products?.id}, V_ID: ${
-            item.variant_id || "N/A"
-          }], Cần: ${requiredQty}, Có sẵn: ${availableQty}`
+          `  [P_ID=${item.product_id}, V_ID=${
+            item.variant_id ?? "null"
+          }] cần: ${requiredQty}, tồn: ${availableQty}, đặt: ${reservedQty}, sẵn có: ${actualAvailable}`
         );
 
-        if (error || !inventory || availableQty < requiredQty) {
+        if (actualAvailable < requiredQty) {
           console.log(
-            `  ❌ KẾT QUẢ: KHÔNG ĐỦ HÀNG cho sản phẩm này. Dừng kiểm tra.`
+            `❌ Không đủ hàng (thiếu ${requiredQty - actualAvailable})`
           );
-          return false; // Chi nhánh không đủ hàng
+          return false;
         }
       }
 
-      console.log(`  ✅ KẾT QUẢ: ĐỦ HÀNG cho tất cả sản phẩm.`);
-      return true; // Chi nhánh đủ hàng cho tất cả sản phẩm
+      console.log("✅✅✅ Tất cả sản phẩm đều đủ hàng!");
+      return true;
     } catch (err) {
       console.error(
-        `❌ Model - Lỗi khi kiểm tra tồn kho cho đơn hàng tại chi nhánh ${branchId}:`,
-        err.message
+        `❌ Lỗi khi kiểm tra tồn kho tại chi nhánh ${branchId}:`,
+        err
       );
-      return false; // Mặc định là không đủ hàng nếu có lỗi
+      return false;
     }
   }
 }
