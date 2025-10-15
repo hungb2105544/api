@@ -2,7 +2,7 @@ const supabase = require("../supabaseClient");
 
 class ProductDiscountModel {
   static SELECT_FIELDS =
-    "id, product_id, products(name, sku), discount_percentage, discount_amount, start_date, end_date, is_active, created_at";
+    "id, name, product_id, brand_id, type_id, apply_to_all, products(name, sku), brands(brand_name), product_types(type_name), discount_percentage, discount_amount, start_date, end_date, is_active, created_at";
 
   /**
    * @description Tạo một chương trình giảm giá mới cho sản phẩm.
@@ -12,7 +12,11 @@ class ProductDiscountModel {
    */
   static async createDiscount(discountData) {
     const {
+      name,
       product_id,
+      brand_id,
+      type_id,
+      apply_to_all,
       discount_percentage,
       discount_amount,
       start_date,
@@ -21,19 +25,22 @@ class ProductDiscountModel {
     } = discountData;
 
     // --- Validation ---
-    if (!product_id || !start_date || !end_date) {
+    if (!name || !start_date || !end_date) {
       throw new Error(
-        "ID sản phẩm, ngày bắt đầu và ngày kết thúc là bắt buộc."
+        "Tên chương trình, ngày bắt đầu và ngày kết thúc là bắt buộc."
       );
     }
-    if (!discount_percentage && !discount_amount) {
-      throw new Error("Phải cung cấp giảm giá theo % hoặc số tiền.");
-    }
-    if (discount_percentage && discount_amount) {
+    // Các validation này đã được xử lý bởi `CHECK` constraint trong CSDL,
+    // nhưng việc kiểm tra ở đây sẽ trả về lỗi thân thiện hơn.
+    const scopeCount = [product_id, brand_id, type_id, apply_to_all].filter(
+      (v) => v !== null && v !== undefined && v !== false
+    ).length;
+    if (scopeCount !== 1) {
       throw new Error(
-        "Chỉ có thể chọn một trong hai: giảm giá theo % hoặc số tiền."
+        "Phải chọn một và chỉ một phạm vi áp dụng (sản phẩm, thương hiệu, loại, hoặc tất cả)."
       );
     }
+
     if (new Date(start_date) >= new Date(end_date)) {
       throw new Error("Ngày kết thúc phải sau ngày bắt đầu.");
     }
@@ -42,7 +49,11 @@ class ProductDiscountModel {
       const { data, error } = await supabase
         .from("product_discounts")
         .insert({
+          name,
           product_id,
+          brand_id,
+          type_id,
+          apply_to_all,
           discount_percentage,
           discount_amount,
           start_date,
@@ -54,7 +65,17 @@ class ProductDiscountModel {
 
       if (error) {
         console.error("❌ Model - Lỗi khi tạo giảm giá:", error.message);
-        throw new Error("Không thể tạo chương trình giảm giá.");
+        if (error.message.includes("chk_discount_scope")) {
+          throw new Error("Lỗi phạm vi: Chỉ được chọn một phạm vi áp dụng.");
+        }
+        if (error.message.includes("chk_discount_value")) {
+          throw new Error(
+            "Lỗi giá trị: Chỉ được điền giảm giá theo % hoặc số tiền."
+          );
+        }
+        throw new Error(
+          "Không thể tạo chương trình giảm giá. Lỗi: " + error.message
+        );
       }
 
       return data;
@@ -78,6 +99,15 @@ class ProductDiscountModel {
 
       if (filters.product_id) {
         query = query.eq("product_id", filters.product_id);
+      }
+      if (filters.brand_id) {
+        query = query.eq("brand_id", filters.brand_id);
+      }
+      if (filters.type_id) {
+        query = query.eq("type_id", filters.type_id);
+      }
+      if (filters.apply_to_all !== undefined) {
+        query = query.eq("apply_to_all", filters.apply_to_all);
       }
       if (filters.is_active !== undefined) {
         query = query.eq("is_active", filters.is_active);
@@ -127,6 +157,19 @@ class ProductDiscountModel {
    * @returns {Promise<object>} - Dữ liệu sau khi cập nhật.
    */
   static async updateDiscount(id, updateData) {
+    // Validation
+    if (
+      updateData.start_date &&
+      updateData.end_date &&
+      new Date(updateData.start_date) >= new Date(updateData.end_date)
+    ) {
+      throw new Error("Ngày kết thúc phải sau ngày bắt đầu.");
+    }
+    if (updateData.discount_percentage && updateData.discount_amount) {
+      throw new Error(
+        "Chỉ có thể chọn một trong hai: giảm giá theo % hoặc số tiền."
+      );
+    }
     try {
       const { data, error } = await supabase
         .from("product_discounts")
@@ -165,6 +208,63 @@ class ProductDiscountModel {
       return true;
     } catch (err) {
       console.error("❌ Model - Lỗi khi xóa giảm giá:", err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * @description Lấy giảm giá áp dụng cho một sản phẩm cụ thể, theo thứ tự ưu tiên.
+   * Ưu tiên: Giảm giá sản phẩm > Giảm giá loại > Giảm giá thương hiệu > Giảm giá toàn bộ.
+   * @param {number} productId - ID của sản phẩm.
+   * @returns {Promise<object|null>} - Giảm giá tốt nhất được áp dụng hoặc null.
+   */
+  static async getApplicableDiscountForProduct(productId) {
+    try {
+      // 1. Lấy thông tin brand_id và type_id của sản phẩm
+      const { data: product, error: productError } = await supabase
+        .from("products")
+        .select("brand_id, type_id")
+        .eq("id", productId)
+        .single();
+
+      if (productError || !product) {
+        throw new Error("Không tìm thấy sản phẩm.");
+      }
+
+      const { brand_id, type_id } = product;
+      const now = new Date().toISOString();
+
+      // 2. Xây dựng các điều kiện OR để tìm tất cả các giảm giá có thể áp dụng
+      const orConditions = [
+        `product_id.eq.${productId}`, // Giảm giá cho sản phẩm cụ thể
+        `type_id.eq.${type_id}`, // Giảm giá cho loại sản phẩm
+        `brand_id.eq.${brand_id}`, // Giảm giá cho thương hiệu
+        "apply_to_all.eq.true", // Giảm giá cho tất cả
+      ].join(",");
+
+      // 3. Truy vấn tất cả các giảm giá hợp lệ
+      const { data: discounts, error: discountError } = await supabase
+        .from("product_discounts")
+        .select(this.SELECT_FIELDS)
+        .eq("is_active", true)
+        .lte("start_date", now)
+        .gte("end_date", now)
+        .or(orConditions);
+
+      if (discountError)
+        throw new Error("Lỗi khi truy vấn giảm giá: " + discountError.message);
+      if (!discounts || discounts.length === 0) return null;
+
+      // 4. Sắp xếp theo thứ tự ưu tiên và trả về cái đầu tiên
+      discounts.sort((a, b) => {
+        const priority = (d) =>
+          d.product_id ? 4 : d.type_id ? 3 : d.brand_id ? 2 : 1;
+        return priority(b) - priority(a);
+      });
+
+      return discounts[0];
+    } catch (err) {
+      console.error("❌ Model - Lỗi khi lấy giảm giá áp dụng:", err.message);
       throw err;
     }
   }

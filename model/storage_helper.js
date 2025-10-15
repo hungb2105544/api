@@ -3,16 +3,24 @@ const path = require("path");
 const { v4: uuidv4 } = require("uuid");
 
 class StorageHelper {
+  static _sanitize(input) {
+    if (!input) return "";
+    // Thay thế khoảng trắng và các ký tự không an toàn bằng gạch ngang
+    // Loại bỏ các ký tự tiếng Việt có dấu
+    return input
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "-")
+      .replace(/[^a-zA-Z0-9.\-_]/g, "");
+  }
+
   static async uploadImage(file, bucketName, entityName) {
     if (!file || !file.buffer || !file.mimetype) {
       throw new Error("File không hợp lệ để upload.");
     }
-
+    const sanitizedName = this._sanitize(path.parse(file.originalname).name);
     const fileExt = path.extname(file.originalname);
-    const fileName = `${uuidv4()}-${(entityName || "file").replace(
-      /\s+/g,
-      "-"
-    )}${fileExt}`;
+    const fileName = `${uuidv4()}-${sanitizedName || "file"}${fileExt}`;
 
     const { error: uploadError } = await supabase.storage
       .from(bucketName)
@@ -42,9 +50,10 @@ class StorageHelper {
     const uploadPromises = files.map((file) => {
       if (!file || !file.buffer) return Promise.resolve(null);
 
-      const fileName = `${folder ? `${folder}/` : ""}${uuidv4()}-${
-        file.originalname
-      }`;
+      const sanitizedName = this._sanitize(file.originalname);
+      const fileName = `${
+        folder ? `${folder}/` : ""
+      }${uuidv4()}-${sanitizedName}`;
 
       return supabase.storage
         .from(bucketName)

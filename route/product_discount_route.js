@@ -15,6 +15,12 @@ router.get(
   ProductDiscountController.getDiscountsByProductId
 );
 
+// Lấy giảm giá tốt nhất đang áp dụng cho một sản phẩm
+router.get(
+  "/applicable/:productId",
+  ProductDiscountController.getApplicableDiscount
+);
+
 // Tạo một giảm giá mới
 router.post("/", ProductDiscountController.createDiscount);
 

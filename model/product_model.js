@@ -5,6 +5,15 @@ class ProductModel {
   static SELECT_FIELDS =
     "id, name, brand_id, brands(brand_name), type_id, product_types(type_name), description, color, material, image_urls, sku, weight, dimensions, origin_country, warranty_months, care_instructions, features, tags, average_rating, total_ratings, rating_distribution, view_count, is_featured, is_active, created_at, updated_at";
 
+  /**
+   * @description Chuẩn hóa tên file để an toàn cho URL và hệ thống file.
+   * @param {string} filename - Tên file gốc.
+   * @returns {string} - Tên file đã được chuẩn hóa.
+   */
+  static _sanitizeFileName(filename) {
+    return filename.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+  }
+
   static async savePriceHistory({ product_id, price, changed_by = null }) {
     try {
       if (!product_id || typeof price !== "number" || price < 0) {
@@ -163,7 +172,9 @@ class ProductModel {
             console.warn("❌ Model - File không hợp lệ, bỏ qua:", file);
             return null;
           }
-          const fileName = `${uuidv4()}-${file.originalname}`;
+          const fileName = `${uuidv4()}-${this._sanitizeFileName(
+            file.originalname
+          )}`;
           const filePath = `product_${product.id}/${fileName}`;
 
           const { error: uploadError } = await supabase.storage
@@ -297,7 +308,9 @@ class ProductModel {
 
       if (productData.newImages?.length > 0) {
         const uploads = productData.newImages.map(async (file) => {
-          const fileName = `${uuidv4()}-${file.originalname}`;
+          const fileName = `${uuidv4()}-${this._sanitizeFileName(
+            file.originalname
+          )}`;
           const filePath = `product_${id}/${fileName}`;
           await supabase.storage
             .from("products")

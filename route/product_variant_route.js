@@ -16,7 +16,7 @@ router.post(
   "/bulk-with-shared-images",
   authMiddleware,
   upload.array("images", 5),
-  ProductVariantController.createVariantsWithSharedImages
+  ProductVariantController.handleBulkCreateWithSharedImages
 );
 router.put(
   "/:id",
