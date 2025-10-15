@@ -5,7 +5,11 @@ class InventoryModel {
   static SELECT_FIELDS =
     "id, product_id, variant_id, branch_id, quantity, reserved_quantity, min_stock_level, max_stock_level, updated_at, products(name), branches(name), product_variants(color)";
 
-  // Hàm tiện ích để xử lý variantId
+  /**
+   * @description Hàm tiện ích để chuẩn hóa giá trị variantId. Chuyển đổi các giá trị như "null", "", undefined thành null thực sự.
+   * @param {string | number | null | undefined} variantId - ID biến thể đầu vào.
+   * @returns {number | null} - ID biến thể đã được xử lý hoặc null.
+   */
   static _processVariantId(variantId) {
     if (variantId === "null" || variantId === "" || variantId === undefined) {
       return null;
@@ -13,6 +17,15 @@ class InventoryModel {
     return variantId;
   }
 
+  /**
+   * @description Ghi lại các thay đổi trong kho vào bảng audit_logs.
+   * @param {'inventory'} tableName - Tên bảng.
+   * @param {number} recordId - ID của bản ghi tồn kho đã thay đổi.
+   * @param {'INSERT' | 'UPDATE' | 'DELETE'} action - Hành động thực hiện.
+   * @param {object | null} oldValues - Dữ liệu cũ (chỉ cho UPDATE).
+   * @param {object | null} newValues - Dữ liệu mới.
+   * @param {string | null} userId - ID của người dùng thực hiện thay đổi.
+   */
   static async logInventoryChange(
     tableName,
     recordId,
@@ -47,6 +60,14 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Lấy danh sách tồn kho với các bộ lọc và phân trang.
+   * @param {number} limit - Số lượng bản ghi mỗi trang.
+   * @param {number} offset - Vị trí bắt đầu lấy.
+   * @param {object} filters - Các bộ lọc (branch_id, product_id, variant_id, has_stock, low_stock).
+   * @returns {Promise<Array<object>>} - Mảng các bản ghi tồn kho.
+   * @throws {Error} Nếu không thể lấy dữ liệu.
+   */
   static async getAllInventory(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase
@@ -88,6 +109,12 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Lấy thông tin chi tiết của một bản ghi tồn kho theo ID.
+   * @param {number} id - ID của bản ghi tồn kho.
+   * @returns {Promise<object>} - Đối tượng tồn kho chi tiết.
+   * @throws {Error} Nếu không tìm thấy hoặc có lỗi.
+   */
   static async getInventoryById(id) {
     try {
       const { data, error } = await supabase
@@ -111,6 +138,14 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Thêm mới hoặc cập nhật một bản ghi tồn kho.
+   * Hàm này sẽ tự động kiểm tra sự tồn tại của bản ghi dựa trên (branch_id, product_id, variant_id).
+   * @param {object} inventoryData - Dữ liệu tồn kho cần upsert.
+   * @param {string | null} userId - ID người dùng để ghi log.
+   * @returns {Promise<object>} - Bản ghi tồn kho sau khi đã upsert.
+   * @throws {Error} Nếu dữ liệu không hợp lệ hoặc có lỗi xảy ra.
+   */
   static async upsertInventory(inventoryData, userId = null) {
     // Xử lý variant_id
     inventoryData.variant_id = this._processVariantId(inventoryData.variant_id);
@@ -130,6 +165,7 @@ class InventoryModel {
     }
 
     try {
+      // 1. Xác thực các khóa ngoại (branch, product, variant)
       const { data: branch, error: branchError } = await supabase
         .from("branches")
         .select("id")
@@ -164,7 +200,7 @@ class InventoryModel {
         }
       }
 
-      // Xây dựng query linh hoạt cho variant_id
+      // 2. Kiểm tra xem bản ghi tồn kho đã tồn tại chưa
       let existingQuery = supabase
         .from("inventory")
         .select(
@@ -194,6 +230,7 @@ class InventoryModel {
       }
 
       let result;
+      // 3. Chuẩn bị dữ liệu mới, sử dụng giá trị cũ nếu không được cung cấp
       const newQuantity =
         inventoryData.quantity ?? existingInventory?.quantity ?? 0;
       const newReservedQuantity =
@@ -220,7 +257,9 @@ class InventoryModel {
         );
       }
 
+      // 4. Thực hiện UPDATE hoặc INSERT
       if (existingInventory) {
+        // 4a. Nếu tồn tại -> Cập nhật
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -269,6 +308,7 @@ class InventoryModel {
           userId
         );
       } else {
+        // 4b. Nếu chưa tồn tại -> Thêm mới
         const { data, error } = await supabase
           .rpc("execute_transaction", {
             query: `
@@ -339,13 +379,18 @@ class InventoryModel {
     }
   }
 
-  // Hàm private để kiểm tra điều kiện tiên quyết
+  /**
+   * @description (Hàm nội bộ) Xác thực sự tồn tại và trạng thái active của chi nhánh, sản phẩm, và biến thể.
+   * @param {number} branchId - ID chi nhánh.
+   * @param {number} productId - ID sản phẩm.
+   * @param {number | null} variantId - ID biến thể (hoặc null).
+   * @throws {Error} Nếu một trong các ID không hợp lệ.
+   */
   static async _validateInventoryPrerequisites(
     branchId,
     productId,
     variantId = null
   ) {
-    // Xử lý variantId
     variantId = this._processVariantId(variantId);
 
     console.log(
@@ -398,6 +443,17 @@ class InventoryModel {
     console.log(`[VALIDATE] ✅ Xác thực thành công.`);
   }
 
+  /**
+   * @description Giảm số lượng tồn kho và tăng số lượng giữ chỗ (thường dùng khi xác nhận đơn hàng).
+   * Sử dụng RPC `decrease_inventory_and_return` để đảm bảo tính nguyên tử.
+   * @param {number} branchId - ID chi nhánh.
+   * @param {number} productId - ID sản phẩm.
+   * @param {number | null} variantId - ID biến thể.
+   * @param {number} quantity - Số lượng cần giảm.
+   * @param {string | null} userId - ID người dùng để ghi log.
+   * @returns {Promise<object>} - Bản ghi tồn kho sau khi đã cập nhật.
+   * @throws {Error} Nếu không đủ hàng hoặc có lỗi xảy ra.
+   */
   static async decreaseInventory(
     branchId,
     productId,
@@ -405,7 +461,6 @@ class InventoryModel {
     quantity,
     userId = null
   ) {
-    // Xử lý variantId
     variantId = this._processVariantId(variantId);
 
     console.log(
@@ -437,7 +492,6 @@ class InventoryModel {
         .eq("branch_id", branchId)
         .eq("product_id", productId);
 
-      // XỬ LÝ VARIANT_ID ĐÚNG CÁCH
       if (variantId === null) {
         query = query.is("variant_id", null);
       } else {
@@ -459,6 +513,7 @@ class InventoryModel {
         throw new Error("Lỗi khi kiểm tra tồn kho");
       }
 
+      // Kiểm tra xem số lượng có đủ để giảm không
       if (inventory.quantity < quantity) {
         throw new Error(
           `Số lượng tồn kho không đủ. Cần ${quantity}, có ${inventory.quantity}`
@@ -468,6 +523,7 @@ class InventoryModel {
       const newQuantity = inventory.quantity - quantity;
       const newReservedQuantity = inventory.reserved_quantity + quantity;
 
+      // Cảnh báo nếu tồn kho dưới mức tối thiểu
       if (newQuantity < inventory.min_stock_level) {
         console.warn(
           `⚠️ Số lượng tồn kho (${newQuantity}) thấp hơn mức tối thiểu (${inventory.min_stock_level})`
@@ -513,6 +569,17 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Tăng số lượng tồn kho (thường dùng khi nhập hàng, trả hàng).
+   * Tự động tạo bản ghi tồn kho mới nếu chưa có.
+   * @param {number} branchId - ID chi nhánh.
+   * @param {number} productId - ID sản phẩm.
+   * @param {number | null} variantId - ID biến thể.
+   * @param {number} quantity - Số lượng cần tăng.
+   * @param {string | null} userId - ID người dùng để ghi log.
+   * @returns {Promise<object>} - Bản ghi tồn kho sau khi đã cập nhật.
+   * @throws {Error} Nếu có lỗi xảy ra.
+   */
   static async increaseInventory(
     branchId,
     productId,
@@ -520,7 +587,6 @@ class InventoryModel {
     quantity,
     userId = null
   ) {
-    // Xử lý variantId
     variantId = this._processVariantId(variantId);
 
     console.log(
@@ -528,12 +594,13 @@ class InventoryModel {
         variantId || "N/A"
       }, Qty=${quantity}`
     );
+
     if (!branchId || !productId || !quantity || quantity <= 0) {
       throw new Error("Chi nhánh, sản phẩm và số lượng (> 0) là bắt buộc");
     }
 
     try {
-      // Sử dụng hàm validation chung
+      // 1. Xác thực các ID đầu vào
       await this._validateInventoryPrerequisites(
         branchId,
         productId,
@@ -566,8 +633,10 @@ class InventoryModel {
         throw new Error("Lỗi khi kiểm tra tồn kho");
       }
 
+      // 3. Thực hiện UPDATE hoặc INSERT
       let result;
       if (inventory) {
+        // 3a. Nếu đã có -> Cập nhật số lượng
         const newQuantity = inventory.quantity + quantity;
         console.log(
           `[INCREASE] Bản ghi đã tồn tại. Cập nhật số lượng từ ${inventory.quantity} -> ${newQuantity}`
@@ -579,26 +648,16 @@ class InventoryModel {
           );
         }
 
-        console.log(`[INCREASE] Đang gọi RPC để cập nhật...`);
+        // Sử dụng .update() trực tiếp cho thao tác đơn giản này
         const { data, error } = await supabase
-          .rpc("execute_transaction", {
-            query: `
-              BEGIN;
-              UPDATE inventory 
-              SET 
-                quantity = ${newQuantity},
-                updated_at = NOW()
-              WHERE id = ${inventory.id};
-              COMMIT;
-            `,
+          .from("inventory")
+          .update({
+            quantity: newQuantity,
+            updated_at: new Date().toISOString(),
           })
-          .then(async () => {
-            return supabase
-              .from("inventory")
-              .select(this.SELECT_FIELDS)
-              .eq("id", inventory.id)
-              .single();
-          });
+          .eq("id", inventory.id)
+          .select(this.SELECT_FIELDS)
+          .single();
 
         if (error) {
           console.error("❌ Model - Lỗi khi tăng tồn kho:", error.message);
@@ -620,40 +679,19 @@ class InventoryModel {
           `[INCREASE] Bản ghi chưa tồn tại. Tạo mới với số lượng ${quantity}`
         );
         const { data, error } = await supabase
-          .rpc("execute_transaction", {
-            query: `
-              BEGIN;
-              INSERT INTO inventory (
-                branch_id, product_id, variant_id, quantity, reserved_quantity,
-                min_stock_level, max_stock_level, updated_at
-              ) VALUES (
-                ${branchId},
-                ${productId},
-                ${variantId || null},
-                ${quantity},
-                0,
-                5,
-                1000,
-                NOW()
-              ) RETURNING *;
-              COMMIT;
-            `,
+          .from("inventory")
+          .insert({
+            branch_id: branchId,
+            product_id: productId,
+            variant_id: variantId,
+            quantity: quantity,
+            reserved_quantity: 0,
+            min_stock_level: 5,
+            max_stock_level: 1000,
+            updated_at: new Date().toISOString(),
           })
-          .then(async () => {
-            let newRecordQuery = supabase
-              .from("inventory")
-              .select(this.SELECT_FIELDS)
-              .eq("branch_id", branchId)
-              .eq("product_id", productId);
-
-            if (variantId === null) {
-              newRecordQuery = newRecordQuery.is("variant_id", null);
-            } else {
-              newRecordQuery = newRecordQuery.eq("variant_id", variantId);
-            }
-
-            return newRecordQuery.single();
-          });
+          .select(this.SELECT_FIELDS)
+          .single();
 
         if (error) {
           console.error("❌ Model - Lỗi khi thêm tồn kho:", error.message);
@@ -687,6 +725,17 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Hoàn lại tồn kho (thường dùng khi hủy đơn hàng).
+   * Giảm số lượng giữ chỗ và tăng lại số lượng tồn kho.
+   * Sử dụng RPC `cancel_order_inventory_and_return` để đảm bảo tính nguyên tử.
+   * @param {number} branchId - ID chi nhánh.
+   * @param {number} productId - ID sản phẩm.
+   * @param {number | null} variantId - ID biến thể.
+   * @param {number} quantity - Số lượng cần hoàn lại.
+   * @param {string | null} userId - ID người dùng để ghi log.
+   * @returns {Promise<object>} - Bản ghi tồn kho sau khi đã cập nhật.
+   */
   static async cancelOrderInventory(
     branchId,
     productId,
@@ -707,7 +756,6 @@ class InventoryModel {
     }
 
     try {
-      // Sử dụng hàm validation chung
       await this._validateInventoryPrerequisites(
         branchId,
         productId,
@@ -732,6 +780,7 @@ class InventoryModel {
 
       const { data: inventory, error: fetchError } = await query.single();
 
+      // Xử lý nếu không tìm thấy
       if (fetchError || !inventory) {
         if (fetchError && fetchError.code === "PGRST116") {
           throw new Error(
@@ -745,6 +794,7 @@ class InventoryModel {
         throw new Error("Lỗi khi kiểm tra tồn kho");
       }
 
+      // Kiểm tra xem số lượng giữ chỗ có đủ để hoàn không
       if (inventory.reserved_quantity < quantity) {
         throw new Error(
           `Số lượng giữ chỗ không đủ để hoàn. Cần hoàn ${quantity}, đang giữ ${inventory.reserved_quantity}`
@@ -754,6 +804,7 @@ class InventoryModel {
       const newQuantity = inventory.quantity + quantity;
       const newReservedQuantity = inventory.reserved_quantity - quantity;
 
+      // Cảnh báo nếu số lượng mới vượt mức tối đa
       if (newQuantity > inventory.max_stock_level) {
         throw new Error(
           `Số lượng tồn kho (${newQuantity}) vượt quá mức tối đa (${inventory.max_stock_level})`
@@ -799,6 +850,13 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Xóa mềm một bản ghi tồn kho bằng cách đặt số lượng về 0.
+   * Chỉ thực hiện được khi không còn hàng giữ chỗ.
+   * @param {number} id - ID của bản ghi tồn kho.
+   * @param {string | null} userId - ID người dùng để ghi log.
+   * @returns {Promise<object>} - Bản ghi tồn kho sau khi đã cập nhật.
+   */
   static async deleteInventory(id, userId = null) {
     try {
       const { data: inventory, error: fetchError } = await supabase
@@ -820,6 +878,7 @@ class InventoryModel {
         throw new Error("Lỗi khi kiểm tra tồn kho");
       }
 
+      // Không cho xóa nếu vẫn còn hàng đang được giữ cho đơn hàng
       if (inventory.reserved_quantity > 0) {
         throw new Error("Không thể xóa vì vẫn còn số lượng giữ chỗ");
       }
@@ -865,7 +924,12 @@ class InventoryModel {
     }
   }
 
-  // Lấy thống kê tồn kho
+  /**
+   * @description Lấy các số liệu thống kê về tồn kho (tổng sản phẩm, tổng số lượng, hàng sắp hết, hết hàng).
+   * @param {number | null} branchId - Lọc theo một chi nhánh cụ thể hoặc lấy toàn bộ.
+   * @returns {Promise<object>} - Đối tượng chứa các số liệu thống kê.
+   * @throws {Error} Nếu có lỗi xảy ra.
+   */
   static async getInventoryStats(branchId = null) {
     try {
       let query = supabase.rpc("get_inventory_stats", {
@@ -903,6 +967,12 @@ class InventoryModel {
     }
   }
 
+  /**
+   * @description Kiểm tra xem một chi nhánh có đủ hàng để đáp ứng một danh sách các sản phẩm trong đơn hàng không.
+   * @param {number} branchId - ID của chi nhánh cần kiểm tra.
+   * @param {Array<object>} orderItems - Mảng các sản phẩm trong đơn hàng, mỗi object chứa { product_id, variant_id, quantity }.
+   * @returns {Promise<boolean>} - `true` nếu đủ hàng, `false` nếu không.
+   */
   static async checkStockForOrder(branchId, orderItems) {
     console.log(
       `\n--- 🔍 Bắt đầu kiểm tra tồn kho cho đơn hàng tại Chi nhánh ID: ${branchId} ---`
@@ -945,9 +1015,6 @@ class InventoryModel {
       };
     });
 
-    console.log("Du lieu sau khi xu li");
-    console.log(orderItems);
-
     try {
       const stockChecks = orderItems.map((item) => {
         const { product_id: productId, variant_id: variantId } = item;
@@ -959,7 +1026,7 @@ class InventoryModel {
           )
           .eq("branch_id", branchId);
 
-        // ✅ Phân biệt rõ giữa null thật và có giá trị
+        // Xây dựng query linh hoạt cho product_id và variant_id
         if (productId === null) query = query.is("product_id", null);
         else query = query.eq("product_id", productId);
 
@@ -973,17 +1040,23 @@ class InventoryModel {
         return query.maybeSingle();
       });
 
+      // Chờ tất cả các promise hoàn thành
       const results = await Promise.all(stockChecks);
 
+      // Duyệt qua kết quả để kiểm tra
       for (let i = 0; i < results.length; i++) {
         const { data: inventory, error } = results[i];
         const item = orderItems[i];
 
         if (error) {
-          console.log("❌ Query error:", error);
+          console.error(
+            `❌ Lỗi query khi kiểm tra tồn kho cho item ${i}:`,
+            error.message
+          );
           return false;
         }
 
+        // Nếu không tìm thấy bản ghi tồn kho cho sản phẩm này
         if (!inventory) {
           console.log(
             `❌ Không tìm thấy tồn kho cho sản phẩm [P_ID=${item.product_id}, V_ID=${item.variant_id}]`
@@ -991,6 +1064,7 @@ class InventoryModel {
           return false;
         }
 
+        // Tính toán số lượng thực tế có sẵn
         const availableQty = inventory.quantity ?? 0;
         const reservedQty = inventory.reserved_quantity ?? 0;
         const actualAvailable = availableQty - reservedQty;

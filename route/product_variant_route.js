@@ -12,6 +12,12 @@ router.post(
   upload.array("images", 5),
   ProductVariantController.createVariant
 );
+router.post(
+  "/bulk-with-shared-images",
+  authMiddleware,
+  upload.array("images", 5),
+  ProductVariantController.createVariantsWithSharedImages
+);
 router.put(
   "/:id",
   authMiddleware,

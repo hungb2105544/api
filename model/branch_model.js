@@ -18,7 +18,6 @@ class BranchModel {
 
       const { data, error, count } = await query;
       if (error) throw new Error("Không thể lấy danh sách chi nhánh");
-      console.log(data);
       return { data, count };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy chi nhánh:", err.message);

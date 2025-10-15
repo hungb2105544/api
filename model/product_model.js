@@ -5,12 +5,7 @@ class ProductModel {
   static SELECT_FIELDS =
     "id, name, brand_id, brands(brand_name), type_id, product_types(type_name), description, color, material, image_urls, sku, weight, dimensions, origin_country, warranty_months, care_instructions, features, tags, average_rating, total_ratings, rating_distribution, view_count, is_featured, is_active, created_at, updated_at";
 
-  static async savePriceHistory({
-    product_id,
-    price,
-    variant_id = null,
-    changed_by = null,
-  }) {
+  static async savePriceHistory({ product_id, price, changed_by = null }) {
     try {
       if (!product_id || typeof price !== "number" || price < 0) {
         throw new Error("Thiếu ID sản phẩm hoặc giá không hợp lệ.");
@@ -20,7 +15,6 @@ class ProductModel {
         .from("product_price_history")
         .insert({
           product_id,
-          variant_id,
           price,
           effective_date: new Date().toISOString(),
           created_by: changed_by,
@@ -41,6 +35,15 @@ class ProductModel {
       throw err;
     }
   }
+  static isValidJson(data) {
+    try {
+      if (typeof data === "string") JSON.parse(data);
+      else JSON.stringify(data);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
 
   static async createProduct(productData, imageFiles = [], variants = []) {
     if (!productData.name || !productData.brand_id || !productData.type_id) {
@@ -48,6 +51,20 @@ class ProductModel {
     }
 
     try {
+      // Chuyển đổi các trường JSON và số từ chuỗi nếu cần
+      if (productData.dimensions && !this.isValidJson(productData.dimensions)) {
+        productData.dimensions = JSON.parse(productData.dimensions);
+      }
+      if (productData.features && !this.isValidJson(productData.features)) {
+        productData.features = JSON.parse(productData.features);
+      }
+      if (
+        productData.price !== undefined &&
+        typeof productData.price === "string"
+      ) {
+        productData.price = parseFloat(productData.price);
+      }
+
       const { data: brand, error: brandError } = await supabase
         .from("brands")
         .select("id")
@@ -240,167 +257,123 @@ class ProductModel {
     }
   }
 
-  static async updateProduct(id, productData, imageFiles = [], variants = []) {
+  static async updateProduct(id, productData, userId = null) {
     try {
-      const { data: existingProduct, error: fetchError } = await supabase
+      const { data: oldProduct } = await supabase
         .from("products")
-        .select(this.SELECT_FIELDS)
+        .select("*")
         .eq("id", id)
-        .eq("is_active", true)
         .single();
+      if (!oldProduct) throw new Error("Không tìm thấy sản phẩm");
 
-      if (fetchError || !existingProduct) {
-        throw new Error("Không tìm thấy sản phẩm");
+      // ✅ Kiểm tra SKU trùng
+      if (productData.sku && productData.sku !== oldProduct.sku) {
+        const { data: variantSku } = await supabase
+          .from("product_variants")
+          .select("sku")
+          .eq("sku", productData.sku)
+          .single();
+        if (variantSku) throw new Error("SKU đã tồn tại ở biến thể khác");
       }
 
-      if (typeof productData.price === "number" && productData.price >= 0) {
-        await this.savePriceHistory({
-          product_id: id,
-          price: productData.price,
-          variant_id: null,
-          changed_by: productData.changed_by || null,
-        });
-      }
+      // ✅ Xử lý ảnh sản phẩm
+      let imageUrls = oldProduct.image_urls || [];
 
-      const updateData = {
-        name: productData.name || existingProduct.name,
-        brand_id: productData.brand_id || existingProduct.brand_id,
-        type_id: productData.type_id || existingProduct.type_id,
-        description: productData.description ?? existingProduct.description,
-        sku: productData.sku || existingProduct.sku,
-        material: productData.material ?? existingProduct.material,
-        weight: productData.weight ?? existingProduct.weight,
-        updated_at: new Date().toISOString(),
-      };
-
-      let imageUrls = existingProduct.image_urls || [];
-
-      if (
-        productData.removeImageUrls &&
-        Array.isArray(productData.removeImageUrls)
-      ) {
-        const urlsToRemove = productData.removeImageUrls;
-        imageUrls = imageUrls.filter((url) => !urlsToRemove.includes(url));
-
-        const filePathsToRemove = urlsToRemove
-          .map((url) => url.split("/products/")[1])
+      if (productData.removeImageUrls?.length > 0) {
+        const filePaths = productData.removeImageUrls
+          .map((url) => {
+            const match = url.match(
+              /\/storage\/v1\/object\/public\/products\/(.+)$/
+            );
+            return match ? match[1] : null;
+          })
           .filter(Boolean);
-        if (filePathsToRemove.length > 0) {
-          await supabase.storage.from("products").remove(filePathsToRemove);
-        }
+        if (filePaths.length > 0)
+          await supabase.storage.from("products").remove(filePaths);
+        imageUrls = imageUrls.filter(
+          (u) => !productData.removeImageUrls.includes(u)
+        );
       }
 
-      if (imageFiles && imageFiles.length > 0) {
-        const uploadPromises = imageFiles.map(async (file) => {
-          if (!file.buffer || !file.originalname || !file.mimetype) {
-            console.warn("❌ Model - File không hợp lệ, bỏ qua:", file);
-            return null;
-          }
+      if (productData.newImages?.length > 0) {
+        const uploads = productData.newImages.map(async (file) => {
           const fileName = `${uuidv4()}-${file.originalname}`;
           const filePath = `product_${id}/${fileName}`;
-
-          const { error: uploadError } = await supabase.storage
+          await supabase.storage
             .from("products")
             .upload(filePath, file.buffer, {
               contentType: file.mimetype,
-              duplex: "half",
+              upsert: true,
             });
-
-          if (uploadError) {
-            console.error("❌ Lỗi upload ảnh mới:", uploadError.message);
-            return null;
-          }
-          return supabase.storage.from("products").getPublicUrl(filePath).data
-            ?.publicUrl;
+          const { data: urlData } = supabase.storage
+            .from("products")
+            .getPublicUrl(filePath);
+          return urlData.publicUrl;
         });
-
-        const newImageUrls = (await Promise.all(uploadPromises)).filter(
-          Boolean
-        );
-        imageUrls = [...imageUrls, ...newImageUrls];
+        const newUrls = (await Promise.all(uploads)).filter(Boolean);
+        imageUrls = [...imageUrls, ...newUrls];
       }
+
+      // ✅ Cập nhật sản phẩm
+      const updateData = {
+        name: productData.name ?? oldProduct.name,
+        brand_id: productData.brand_id ?? oldProduct.brand_id,
+        type_id: productData.type_id ?? oldProduct.type_id,
+        description: productData.description ?? oldProduct.description,
+        sku: productData.sku ?? oldProduct.sku,
+        image_urls: imageUrls,
+        updated_at: new Date().toISOString(),
+      };
 
       const { data: updatedProduct, error: updateError } = await supabase
         .from("products")
-        .update({ ...updateData, image_urls: imageUrls })
+        .update(updateData)
         .eq("id", id)
-        .select(this.SELECT_FIELDS)
+        .select("*")
         .single();
+      if (updateError) throw new Error(updateError.message);
 
-      if (updateError) {
-        throw new Error(`Không thể cập nhật sản phẩm: ${updateError.message}`);
-      }
-
-      if (variants && Array.isArray(variants) && variants.length > 0) {
-        for (const variant of variants) {
-          if (typeof variant.price !== "number" || variant.price < 0) continue;
-
+      // ✅ Cập nhật các biến thể
+      if (productData.variants?.length > 0) {
+        for (const variant of productData.variants) {
           if (variant.id) {
-            const { data: existingVariant } = await supabase
-              .from("product_variants")
-              .select("id, price")
-              .eq("id", variant.id)
-              .single();
-            if (existingVariant) {
-              await supabase
-                .from("product_variants")
-                .update({
-                  price: variant.price,
-                  color: variant.color,
-                  size_id: variant.size_id,
-                  sku: variant.sku,
-                  updated_at: new Date().toISOString(),
-                })
-                .eq("id", variant.id);
-
-              if (existingVariant.price !== variant.price) {
-                await this.savePriceHistory({
-                  product_id: id,
-                  variant_id: variant.id,
-                  price: variant.price,
-                  changed_by: productData.changed_by || null,
-                });
-              }
-            }
-          } else {
-            const { data: createdVariant, error: createError } = await supabase
-              .from("product_variants")
-              .insert({
-                product_id: id,
-                price: variant.price,
-                color: variant.color || null,
-                size_id: variant.size_id || null,
-                sku: variant.sku,
-                is_active: true,
-              })
-              .select("id, price")
-              .single();
-
-            if (createError) {
-              console.error(
-                "❌ Lỗi khi tạo biến thể mới trong lúc cập nhật:",
-                createError.message
-              );
-              continue;
-            }
-
-            await this.savePriceHistory({
-              product_id: id,
-              variant_id: createdVariant.id,
-              price: createdVariant.price,
-              change_reason: "Tạo biến thể mới",
-              changed_by: productData.changed_by || null,
-            });
+            await ProductVariantModel.updateVariant(
+              variant.id,
+              variant,
+              variant.imageFiles || [],
+              userId
+            );
+          } else if (variant.isNew) {
+            await ProductVariantModel.createVariant(
+              { ...variant, product_id: id },
+              variant.imageFiles || [],
+              userId
+            );
           }
         }
       }
 
-      return updatedProduct;
-    } catch (error) {
-      console.error("❌ Model - Lỗi khi cập nhật sản phẩm:", error.message);
-      throw error;
+      // ✅ Xóa biến thể
+      if (productData.removedVariantIds?.length > 0) {
+        for (const vId of productData.removedVariantIds) {
+          await ProductVariantModel.deleteVariant(vId);
+        }
+      }
+
+      // ✅ Trả về dữ liệu đầy đủ
+      const { data: full } = await supabase
+        .from("products")
+        .select(`*, product_variants(*, product_variant_images(*))`)
+        .eq("id", id)
+        .single();
+
+      return full;
+    } catch (err) {
+      console.error("❌ updateProduct error:", err.message);
+      throw err;
     }
   }
+
   static async getAllProduct(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase.from("products").select(this.SELECT_FIELDS);
@@ -434,17 +407,71 @@ class ProductModel {
     }
   }
 
+  // static async getProductById(id) {
+  //   try {
+  //     const { data, error } = await supabase
+  //       .from("products")
+  //       .select(
+  //         `
+  //         *,
+  //         brands(*),
+  //         product_types(*),
+  //         product_variants(*, sizes(*), product_variant_images(*)),
+  //         product_sizes(*, sizes(*))
+  //       `
+  //       )
+  //       .eq("id", id)
+  //       .eq("is_active", true)
+  //       .single();
+
+  //     if (error) {
+  //       if (error.code === "PGRST116")
+  //         throw new Error("Không tìm thấy sản phẩm");
+  //       throw new Error("Lỗi khi lấy sản phẩm");
+  //     }
+
+  //     const { data: prices, error: priceError } = await supabase
+  //       .from("product_price_history")
+  //       .select("price")
+  //       .eq("product_id", id)
+  //       .is("end_date", null);
+
+  //     if (priceError) throw new Error("Lỗi khi lấy lịch sử giá.");
+
+  //     const basePriceRecord = prices.find((p) => p.variant_id === null);
+  //     if (basePriceRecord) {
+  //       data.price = basePriceRecord.price;
+  //     }
+
+  //     if (data.product_variants && data.product_variants.length > 0) {
+  //       data.product_variants.forEach((variant) => {
+  //         const variantPriceRecord = prices.find(
+  //           (p) => p.variant_id === variant.id
+  //         );
+  //         if (variantPriceRecord) {
+  //           variant.price = variantPriceRecord.price;
+  //         }
+  //       });
+  //     }
+
+  //     return data;
+  //   } catch (error) {
+  //     console.error("❌ Model - Lỗi khi lấy sản phẩm:", error.message);
+  //     throw error;
+  //   }
+  // }
+  // Sửa method getProductById trong product_model.js
   static async getProductById(id) {
     try {
       const { data, error } = await supabase
         .from("products")
         .select(
           `
-          *,
-          brands(*),
-          product_types(*),
-          product_variants(*, sizes(*), product_variant_images(*)),
-          product_sizes(*, sizes(*))
+        *,
+        brands(*),
+        product_types(*),
+        product_variants(*, sizes(*), product_variant_images(*)),
+        product_sizes(*, sizes(*))
         `
         )
         .eq("id", id)
@@ -457,29 +484,47 @@ class ProductModel {
         throw new Error("Lỗi khi lấy sản phẩm");
       }
 
-      const { data: prices, error: priceError } = await supabase
+      // FIX: Lấy giá hiện tại cho sản phẩm chính
+      const { data: productPrices, error: priceError } = await supabase
         .from("product_price_history")
-        .select("price")
+        .select("price, effective_date")
         .eq("product_id", id)
-        .is("end_date", null);
+        .is("end_date", null)
+        .order("effective_date", { ascending: false })
+        .limit(1);
 
-      if (priceError) throw new Error("Lỗi khi lấy lịch sử giá.");
-
-      const basePriceRecord = prices.find((p) => p.variant_id === null);
-      if (basePriceRecord) {
-        data.price = basePriceRecord.price;
+      if (priceError) {
+        console.error(
+          "❌ Lỗi khi lấy lịch sử giá sản phẩm:",
+          priceError.message
+        );
       }
 
+      // Gán giá cho sản phẩm chính
+      if (productPrices && productPrices.length > 0) {
+        data.price = productPrices[0].price;
+      } else {
+        // Nếu không có giá trong lịch sử, có thể sản phẩm chưa có giá
+        data.price = 0;
+      }
+
+      // FIX: Tính giá cho các biến thể (giá sản phẩm + additional_price)
       if (data.product_variants && data.product_variants.length > 0) {
         data.product_variants.forEach((variant) => {
-          const variantPriceRecord = prices.find(
-            (p) => p.variant_id === variant.id
-          );
-          if (variantPriceRecord) {
-            variant.price = variantPriceRecord.price;
-          }
+          // Giá biến thể = Giá sản phẩm chính + Giá chênh lệch của biến thể
+          variant.price = data.price + (variant.additional_price || 0);
         });
       }
+
+      console.log("✅ Dữ liệu sản phẩm sau khi xử lý giá:", {
+        productPrice: data.price,
+        variants: data.product_variants?.map((v) => ({
+          color: v.color,
+          size: v.sizes?.size_name,
+          additional_price: v.additional_price,
+          final_price: v.price,
+        })),
+      });
 
       return data;
     } catch (error) {
@@ -487,7 +532,6 @@ class ProductModel {
       throw error;
     }
   }
-
   static async deleteProduct(id) {
     try {
       const { data, error } = await supabase
@@ -501,16 +545,6 @@ class ProductModel {
     } catch (error) {
       console.error("❌ Model - Lỗi khi xóa sản phẩm:", error.message);
       throw error;
-    }
-  }
-
-  static isValidJson(data) {
-    try {
-      if (typeof data === "string") JSON.parse(data);
-      else JSON.stringify(data);
-      return true;
-    } catch (e) {
-      return false;
     }
   }
 }

@@ -14,7 +14,7 @@ router.patch(
   authMiddleware,
   InventoryController.decreaseInventory
 );
-
+router.post("/increase", authMiddleware, InventoryController.increaseInventory);
 router.patch(
   "/increase",
   authMiddleware,

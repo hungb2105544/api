@@ -19,6 +19,7 @@ const userRoutes = require("./route/user_route");
 const branchRoutes = require("./route/branch_route");
 const sizeRoutes = require("./route/size_route");
 const statsRoutes = require("./routes/stats_routes");
+const discountRoutes = require("./route/product_discount_route");
 const fs = require("fs").promises;
 const path = require("path");
 
@@ -81,6 +82,7 @@ app.use("/api/users", userRoutes);
 app.use("/api/branches", branchRoutes);
 app.use("/api/sizes", sizeRoutes);
 app.use("/api/stats", statsRoutes);
+app.use("/api/discounts", discountRoutes);
 // Route kiểm tra server
 app.get("/health", (req, res) => {
   res.status(200).json({
