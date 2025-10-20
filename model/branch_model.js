@@ -25,6 +25,24 @@ class BranchModel {
     }
   }
 
+  static async getAllInformationBranches() {
+    try {
+      let query = supabase
+        .from("branches")
+        .select("*, addresses(*, locations(*))", { count: "exact" })
+        .eq("is_active", true);
+
+      query = query.order("created_at", { ascending: false });
+
+      const { data, error, count } = await query;
+      if (error) throw new Error("Không thể lấy danh sách chi nhánh");
+      return { data, count };
+    } catch (err) {
+      console.error("❌ Model - Lỗi khi lấy chi nhánh:", err.message);
+      throw err;
+    }
+  }
+
   static async getBranchById(id) {
     try {
       const { data, error } = await supabase
