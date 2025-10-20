@@ -5,6 +5,8 @@ class WebhookModel {
       let query = ProductDiscountModel.getAllDiscounts(100, 0, {
         is_active: true,
       });
+      console.log("✅ Model - Lấy chương trình giảm giá thành công mục.");
+      console.log(query);
       return query;
     } catch (error) {
       console.error(
