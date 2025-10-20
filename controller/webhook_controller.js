@@ -12,11 +12,12 @@ class WebhookController {
     switch (intent) {
       case "iKhuyenMai": {
         const productDiscount = await WebhookModel.getPromotion();
-        if (productDiscount.length > 0) {
+        if (productDiscount && productDiscount.length > 0) {
           const promoList = productDiscount
             .map(
               (p) =>
-                `🎉 ${p.title} - Giảm ${p.discount_percent}% (${p.description})`
+                // Sửa lại tên thuộc tính cho đúng với model
+                `🎉 ${p.name} - Giảm ${p.discount_percentage}%`
             )
             .join("\n");
           responseText = `Hiện tại bên mình đang có các chương trình khuyến mãi sau:\n${promoList}`;
