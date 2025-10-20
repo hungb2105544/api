@@ -31,7 +31,7 @@ class WebhookController {
           brand,
           type
         );
-
+        console.log("🔍 Sản phẩm tìm được:", products);
         if (products && products.length > 0) {
           const productList = products
             .map((p) => {

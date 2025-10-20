@@ -610,7 +610,7 @@ class ProductModel {
       `
         )
         .eq("is_active", true);
-
+      console.log(query);
       if (brandId) query = query.eq("brand_id", brandId);
       if (typeId) query = query.eq("type_id", typeId);
 
