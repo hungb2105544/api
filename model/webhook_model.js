@@ -1,6 +1,6 @@
 const ProductDiscountModel = require("./product_discount_model");
 const BranchModel = require("./branch_model"); // Sửa lỗi chính tả BrachModel -> BranchModel
-
+const VoucherModel = require("./voucher_model");
 class WebhookModel {
   static async getPromotion() {
     try {
@@ -28,6 +28,18 @@ class WebhookModel {
         "❌ Model - Lỗi khi lấy địa chỉ cửa hàng:", // Sửa lại nội dung log cho đúng
         error.message
       );
+    }
+  }
+
+  static async getAllVoucher() {
+    try {
+      const { data } = await VoucherModel.getAllVouchers(100, 0, {
+        is_active: true,
+      });
+      console.log("✅ Model - Lấy danh sách voucher thành công.");
+      return data;
+    } catch (error) {
+      console.error("❌ Model - Lỗi khi lấy danh sách voucher:", error.message);
     }
   }
 }

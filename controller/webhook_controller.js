@@ -24,9 +24,9 @@ class WebhookController {
       }
 
       case "iDiaChi": {
-        const storeAddresses = await WebhookModel.getStoreAddress();
-        if (storeAddresses && storeAddresses.length > 0) {
-          const addressList = storeAddresses
+        const vouchers = await WebhookModel.getStoreAddress();
+        if (vouchers && vouchers.length > 0) {
+          const voucherList = vouchers
             .map((branch) => {
               // Kiểm tra xem có thông tin địa chỉ không
               if (!branch.addresses)
@@ -37,12 +37,46 @@ class WebhookController {
                 .filter(Boolean)
                 .join(", ");
 
-              return `📍 *${branch.name}*\n   🏠 Địa chỉ: ${fullAddress}\n   📞 Điện thoại: ${branch.phone}`;
+              return `\n📍 *${branch.name}*\n   🏠 Địa chỉ: ${fullAddress}\n   📞 Điện thoại: ${branch.phone}`;
             })
-            .join("\n\n"); // Sử dụng 2 lần xuống dòng để tách các chi nhánh
-          responseText = `Dưới đây là địa chỉ các cửa hàng của chúng tôi:\n${addressList}`;
+            .join("\n\n");
+          console.log(voucherList);
+          responseText = `Dưới đây là địa chỉ các cửa hàng của chúng tôi:\n${voucherList}`;
         } else {
           responseText = "Hiện tại chưa có địa chỉ cửa hàng nào.";
+        }
+        break;
+      }
+
+      case "iVoucher": {
+        const vouchers = await WebhookModel.getAllVoucher();
+        if (vouchers && vouchers.length > 0) {
+          const voucherList = vouchers
+            .map((voucher) => {
+              const expiryDate = new Date(voucher.valid_to).toLocaleDateString(
+                "vi-VN"
+              );
+              let discountInfo = "";
+              if (voucher.type === "percentage") {
+                discountInfo = `giảm ${voucher.value}%`;
+              } else if (voucher.type === "fixed_amount") {
+                discountInfo = `giảm ${new Intl.NumberFormat("vi-VN").format(
+                  voucher.value
+                )}đ`;
+              } else {
+                discountInfo = "miễn phí vận chuyển";
+              }
+
+              const description = voucher.description
+                ? ` (${voucher.description})`
+                : "";
+              return `🎁 *${voucher.name}*${description}:\n   🏷️ Mã: *${voucher.code}* - ${discountInfo}\n   ⏳ Hạn sử dụng: ${expiryDate}`;
+            })
+            .join("\n\n");
+          responseText = `Tuyệt vời! Hiện tại shop đang có các voucher sau, bạn có thể dùng ngay nhé:\n\n${voucherList}`;
+        } else {
+          responseText =
+            "Tiếc quá, hiện tại shop chưa có voucher nào, bạn quay lại sau nhé.";
         }
         break;
       }
