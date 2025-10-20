@@ -23,6 +23,12 @@ class WebhookController {
         break;
       }
 
+      case "ITuVanSanPham - thuong hieu": {
+        const brand = params["san-pham"] || "thương hiệu bạn quan tâm";
+        const type = params["nhan-hieu1"] || "sản phẩm bạn quan tâm";
+        reqonseText = `Cảm ơn bạn đã quan tâm đến ${brand} và ${type}. Bạn có thể truy cập website của chúng tôi để xem các sản phẩm mới nhất từ ${brand} và các loại ${type} hiện có. Nếu bạn cần tư vấn thêm, đừng ngần ngại hỏi nhé!`;
+        break;
+      }
       case "iDiaChi": {
         const vouchers = await WebhookModel.getStoreAddress();
         if (vouchers && vouchers.length > 0) {
