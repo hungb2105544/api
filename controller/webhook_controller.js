@@ -24,9 +24,38 @@ class WebhookController {
       }
 
       case "ITuVanSanPham - thuong hieu": {
-        const brand = params["san-pham"] || "thương hiệu bạn quan tâm";
-        const type = params["nhan-hieu1"] || "sản phẩm bạn quan tâm";
-        responseText = `Cảm ơn bạn đã quan tâm đến ${brand} và ${type}. Bạn có thể truy cập website của chúng tôi để xem các sản phẩm mới nhất từ ${brand} và các loại ${type} hiện có. Nếu bạn cần tư vấn thêm, đừng ngần ngại hỏi nhé!`;
+        const brand = params["san-pham"];
+        const type = params["nhan-hieu1"];
+
+        const products = await WebhookModel.getProductsByBrandAndType(
+          brand,
+          type
+        );
+
+        if (products && products.length > 0) {
+          const productList = products
+            .map((p) => {
+              const priceFormatted = new Intl.NumberFormat("vi-VN", {
+                style: "currency",
+                currency: "VND",
+              }).format(p.price || 0);
+              return `- ${p.name} - Giá: ${priceFormatted}`;
+            })
+            .join("\n");
+
+          let introText = "Tuyệt vời! ";
+          if (brand && type) {
+            introText += `Dưới đây là danh sách sản phẩm của ${brand} thuộc loại ${type}:`;
+          } else if (brand) {
+            introText += `Dưới đây là danh sách sản phẩm của thương hiệu ${brand}:`;
+          } else if (type) {
+            introText += `Dưới đây là danh sách các sản phẩm ${type}:`;
+          }
+
+          responseText = `${introText}\n${productList}`;
+        } else {
+          responseText = `Rất tiếc, mình không tìm thấy sản phẩm nào của thương hiệu ${brand} thuộc loại ${type}. Bạn có muốn tìm sản phẩm khác không?`;
+        }
         break;
       }
       case "iDiaChi": {

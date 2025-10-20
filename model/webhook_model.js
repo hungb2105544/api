@@ -1,6 +1,7 @@
 const ProductDiscountModel = require("./product_discount_model");
 const BranchModel = require("./branch_model"); // Sửa lỗi chính tả BrachModel -> BranchModel
 const VoucherModel = require("./voucher_model");
+const ProductModel = require("./product_model"); // Giả sử có model sản phẩm
 class WebhookModel {
   static async getPromotion() {
     try {
@@ -40,6 +41,39 @@ class WebhookModel {
       return data;
     } catch (error) {
       console.error("❌ Model - Lỗi khi lấy danh sách voucher:", error.message);
+    }
+  }
+
+  static async getProductsByBrandAndType(brand, type) {
+    try {
+      // Tối ưu: Chỉ xây dựng bộ lọc nếu có giá trị
+      const filters = {};
+      if (brand && brand.trim() !== "") {
+        filters.brand_name = brand;
+      }
+      if (type && type.trim() !== "") {
+        filters.type_name = type;
+      }
+
+      // Nếu không có bộ lọc nào, không cần truy vấn
+      if (Object.keys(filters).length === 0) {
+        console.log(
+          "⚠️ Model - Không có tên thương hiệu hoặc loại sản phẩm để tìm kiếm."
+        );
+        return [];
+      }
+
+      const data = await ProductModel.getProductsWithTypesAndBrands(filters);
+      console.log(
+        "✅ Model - Lấy sản phẩm theo thương hiệu và loại thành công."
+      );
+      return data || []; // Đảm bảo luôn trả về một mảng
+    } catch (error) {
+      console.error(
+        "❌ Model - Lỗi khi lấy sản phẩm theo thương hiệu và loại:",
+        error.message
+      );
+      return []; // Trả về mảng rỗng khi có lỗi
     }
   }
 }
