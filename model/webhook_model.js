@@ -46,16 +46,22 @@ class WebhookModel {
 
   static async getProductsByBrandAndType(brand, type) {
     try {
-      // Tối ưu: Chỉ xây dựng bộ lọc nếu có giá trị
       const filters = {};
-      if (brand && brand.trim() !== "") {
-        filters.brand_name = brand;
-      }
-      if (type && type.trim() !== "") {
-        filters.type_name = type;
+
+      if (brand) {
+        const brandStr = String(
+          typeof brand === "object" && brand.name ? brand.name : brand
+        ).trim();
+        if (brandStr !== "") filters.brand_name = brandStr;
       }
 
-      // Nếu không có bộ lọc nào, không cần truy vấn
+      if (type) {
+        const typeStr = String(
+          typeof type === "object" && type.name ? type.name : type
+        ).trim();
+        if (typeStr !== "") filters.type_name = typeStr;
+      }
+
       if (Object.keys(filters).length === 0) {
         console.log(
           "⚠️ Model - Không có tên thương hiệu hoặc loại sản phẩm để tìm kiếm."
@@ -67,13 +73,13 @@ class WebhookModel {
       console.log(
         "✅ Model - Lấy sản phẩm theo thương hiệu và loại thành công."
       );
-      return data || []; // Đảm bảo luôn trả về một mảng
+      return data || [];
     } catch (error) {
       console.error(
         "❌ Model - Lỗi khi lấy sản phẩm theo thương hiệu và loại:",
         error.message
       );
-      return []; // Trả về mảng rỗng khi có lỗi
+      return [];
     }
   }
 }
