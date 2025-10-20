@@ -7,12 +7,9 @@ class VoucherModel {
 
   static async getAllVouchers(limit = 10, offset = 0, filters = {}) {
     try {
-      let query = supabase
-        .from("vouchers")
-        .select(this.SELECT_FIELDS)
-        .eq("is_active", true)
-        .order("created_at", { ascending: false })
-        .range(offset, offset + limit - 1);
+      let query = supabase.from("vouchers").select(this.SELECT_FIELDS, {
+        count: "exact",
+      });
 
       if (filters.type) {
         query = query.eq("type", filters.type);
@@ -26,7 +23,10 @@ class VoucherModel {
           .lte("valid_from", new Date().toISOString());
       }
 
-      const { data, error } = await query;
+      query = query
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+      const { data, error, count } = await query;
 
       if (error) {
         console.error(
@@ -36,7 +36,7 @@ class VoucherModel {
         throw new Error("Không thể lấy danh sách voucher");
       }
 
-      return data;
+      return { data, total: count };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy voucher:", err.message);
       throw err;

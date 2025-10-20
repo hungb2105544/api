@@ -42,8 +42,16 @@ class ProductDiscountController {
 
   static async getAllDiscounts(req, res) {
     try {
-      const { product_id, brand_id, type_id, apply_to_all, is_active } =
-        req.query;
+      const {
+        limit = 10,
+        offset = 0,
+        product_id,
+        brand_id,
+        type_id,
+        apply_to_all,
+        is_active,
+        name,
+      } = req.query;
       const filters = {};
       if (product_id) filters.product_id = parseInt(product_id);
       if (brand_id) filters.brand_id = parseInt(brand_id);
@@ -51,8 +59,13 @@ class ProductDiscountController {
       if (is_active !== undefined) filters.is_active = is_active === "true";
       if (apply_to_all !== undefined)
         filters.apply_to_all = apply_to_all === "true";
-
-      const discounts = await ProductDiscountModel.getAllDiscounts(filters);
+      if (name) filters.name = name;
+      const discounts = await ProductDiscountModel.getAllDiscounts(
+        parseInt(limit),
+        parseInt(offset),
+        filters
+      );
+      console.log(discounts);
       res.status(200).json({ success: true, data: discounts });
     } catch (error) {
       res.status(500).json({ success: false, message: error.message });
@@ -67,7 +80,8 @@ class ProductDiscountController {
           .status(400)
           .json({ success: false, message: "Thiếu ID sản phẩm." });
       }
-      const discounts = await ProductDiscountModel.getAllDiscounts({
+      // Giả sử không cần phân trang ở đây, hoặc có thể thêm nếu cần
+      const discounts = await ProductDiscountModel.getAllDiscounts(1000, 0, {
         product_id: parseInt(productId),
       });
       res.status(200).json({ success: true, data: discounts });

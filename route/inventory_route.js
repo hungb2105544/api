@@ -4,7 +4,8 @@ const InventoryController = require("../controller/inventory_controller");
 const authMiddleware = require("../middleware/authMiddleware");
 
 router.get("/", authMiddleware, InventoryController.getAllInventory);
-
+router.get("/summary", authMiddleware, InventoryController.getInventorySummary);
+router.get("/export", authMiddleware, InventoryController.exportInventory);
 router.get("/:id", authMiddleware, InventoryController.getInventoryById);
 
 router.post("/", authMiddleware, InventoryController.upsertInventory);

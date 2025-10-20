@@ -13,7 +13,8 @@ class VoucherController {
       );
       return res.status(200).json({
         success: true,
-        data: vouchers,
+        data: vouchers.data,
+        total: vouchers.total,
       });
     } catch (error) {
       console.error(

@@ -389,7 +389,11 @@ class ProductModel {
 
   static async getAllProduct(limit = 10, offset = 0, filters = {}) {
     try {
-      let query = supabase.from("products").select(this.SELECT_FIELDS);
+      // Thêm { count: 'exact' } để lấy tổng số lượng
+      let query = supabase
+        .from("products")
+        .select(this.SELECT_FIELDS, { count: "exact" })
+        .eq("is_active", true);
 
       query = query.eq("is_active", true);
 
@@ -403,77 +407,25 @@ class ProductModel {
         query = query.eq("type_id", filters.type_id);
       }
 
+      // Áp dụng phân trang và sắp xếp
       query = query
         .order("created_at", { ascending: false })
         .range(offset, offset + limit - 1);
 
-      const { data, error } = await query;
+      // Lấy dữ liệu, lỗi và tổng số lượng
+      const { data, error, count } = await query;
 
       if (error) {
         throw new Error(`Lỗi khi lấy danh sách sản phẩm: ${error.message}`);
       }
-
-      return data;
+      // Trả về đối tượng chứa cả data và count
+      return { data, total: count };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy sản phẩm:", err.message);
       throw err;
     }
   }
 
-  // static async getProductById(id) {
-  //   try {
-  //     const { data, error } = await supabase
-  //       .from("products")
-  //       .select(
-  //         `
-  //         *,
-  //         brands(*),
-  //         product_types(*),
-  //         product_variants(*, sizes(*), product_variant_images(*)),
-  //         product_sizes(*, sizes(*))
-  //       `
-  //       )
-  //       .eq("id", id)
-  //       .eq("is_active", true)
-  //       .single();
-
-  //     if (error) {
-  //       if (error.code === "PGRST116")
-  //         throw new Error("Không tìm thấy sản phẩm");
-  //       throw new Error("Lỗi khi lấy sản phẩm");
-  //     }
-
-  //     const { data: prices, error: priceError } = await supabase
-  //       .from("product_price_history")
-  //       .select("price")
-  //       .eq("product_id", id)
-  //       .is("end_date", null);
-
-  //     if (priceError) throw new Error("Lỗi khi lấy lịch sử giá.");
-
-  //     const basePriceRecord = prices.find((p) => p.variant_id === null);
-  //     if (basePriceRecord) {
-  //       data.price = basePriceRecord.price;
-  //     }
-
-  //     if (data.product_variants && data.product_variants.length > 0) {
-  //       data.product_variants.forEach((variant) => {
-  //         const variantPriceRecord = prices.find(
-  //           (p) => p.variant_id === variant.id
-  //         );
-  //         if (variantPriceRecord) {
-  //           variant.price = variantPriceRecord.price;
-  //         }
-  //       });
-  //     }
-
-  //     return data;
-  //   } catch (error) {
-  //     console.error("❌ Model - Lỗi khi lấy sản phẩm:", error.message);
-  //     throw error;
-  //   }
-  // }
-  // Sửa method getProductById trong product_model.js
   static async getProductById(id) {
     try {
       const { data, error } = await supabase

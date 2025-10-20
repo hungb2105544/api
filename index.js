@@ -83,6 +83,8 @@ app.use("/api/branches", branchRoutes);
 app.use("/api/sizes", sizeRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/discounts", discountRoutes);
+//webhook route
+app.use("/api/webhook", require("./route/webhook_route"));
 // Route kiểm tra server
 app.get("/health", (req, res) => {
   res.status(200).json({

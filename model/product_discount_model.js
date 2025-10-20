@@ -90,12 +90,16 @@ class ProductDiscountModel {
    * @param {object} filters - Bộ lọc (VD: { product_id, is_active }).
    * @returns {Promise<Array<object>>} - Danh sách các chương trình giảm giá.
    */
-  static async getAllDiscounts(filters = {}) {
+  static async getAllDiscounts(limit = 10, offset = 0, filters = {}) {
     try {
       let query = supabase
         .from("product_discounts")
-        .select(this.SELECT_FIELDS)
-        .order("created_at", { ascending: false });
+        .select(this.SELECT_FIELDS, { count: "exact" });
+
+      // Lọc theo tên
+      if (filters.name) {
+        query = query.ilike("name", `%${filters.name}%`);
+      }
 
       if (filters.product_id) {
         query = query.eq("product_id", filters.product_id);
@@ -113,12 +117,17 @@ class ProductDiscountModel {
         query = query.eq("is_active", filters.is_active);
       }
 
-      const { data, error } = await query;
+      // Áp dụng sắp xếp và phân trang
+      query = query
+        .order("created_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      const { data, error, count } = await query;
 
       if (error) {
         throw new Error("Không thể lấy danh sách giảm giá.");
       }
-      return data;
+      return { data, total: count };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy danh sách giảm giá:", err.message);
       throw err;

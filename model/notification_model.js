@@ -384,9 +384,17 @@ class NotificationModel {
       }
 
       if (devices && devices.length > 0) {
-        const userNotifications = devices.map((device) => ({
+        const uniqueUserIds = [
+          ...new Set(devices.map((device) => device.user_id)),
+        ];
+
+        console.log(
+          `📢 Gửi thông báo hệ thống đến ${uniqueUserIds.length} người dùng duy nhất.`
+        );
+
+        const userNotifications = uniqueUserIds.map((userId) => ({
           notification_id: notification.id,
-          user_id: device.user_id,
+          user_id: userId,
           delivered_at: new Date().toISOString(),
         }));
 

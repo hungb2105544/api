@@ -2,8 +2,8 @@ const supabase = require("../supabaseClient");
 const { v4: uuidv4 } = require("uuid");
 
 class InventoryModel {
-  static SELECT_FIELDS =
-    "id, product_id, variant_id, branch_id, quantity, reserved_quantity, min_stock_level, max_stock_level, updated_at, products(name), branches(name), product_variants(color)";
+  static SELECT_FIELDS = `id, product_id, variant_id, branch_id, quantity, reserved_quantity, min_stock_level, max_stock_level, updated_at, 
+    products(name), branches(name), product_variants(color, sizes(size_name))`;
 
   /**
    * @description Hàm tiện ích để chuẩn hóa giá trị variantId. Chuyển đổi các giá trị như "null", "", undefined thành null thực sự.
@@ -70,17 +70,20 @@ class InventoryModel {
    */
   static async getAllInventory(limit = 10, offset = 0, filters = {}) {
     try {
-      let query = supabase
-        .from("inventory")
-        .select(this.SELECT_FIELDS)
-        .order("updated_at", { ascending: false })
-        .range(offset, offset + limit - 1);
+      // Thêm { count: 'exact' } để lấy tổng số lượng
+      let query = supabase.from("inventory").select(this.SELECT_FIELDS, {
+        count: "exact",
+      });
 
       if (filters.branch_id) {
         query = query.eq("branch_id", filters.branch_id);
       }
       if (filters.product_id) {
         query = query.eq("product_id", filters.product_id);
+      }
+      // Thêm bộ lọc theo tên sản phẩm
+      if (filters.product_name) {
+        query = query.ilike("products.name", `%${filters.product_name}%`);
       }
       if (filters.variant_id) {
         query = query.eq("variant_id", filters.variant_id);
@@ -92,7 +95,12 @@ class InventoryModel {
         query = query.lte("quantity", supabase.raw("min_stock_level"));
       }
 
-      const { data, error } = await query;
+      // Áp dụng sắp xếp và phân trang sau khi lọc
+      query = query
+        .order("updated_at", { ascending: false })
+        .range(offset, offset + limit - 1);
+
+      const { data, error, count } = await query;
 
       if (error) {
         console.error(
@@ -102,13 +110,52 @@ class InventoryModel {
         throw new Error("Không thể lấy danh sách tồn kho");
       }
 
-      return data;
+      // Trả về đối tượng chứa cả data và tổng số lượng
+      return { data, total: count };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy tồn kho:", err.message);
       throw err;
     }
   }
 
+  /**
+   * @description Lấy TOÀN BỘ danh sách tồn kho để xuất file, có áp dụng bộ lọc.
+   * @param {object} filters - Các bộ lọc (branch_id, product_name).
+   * @returns {Promise<Array<object>>} - Mảng tất cả các bản ghi tồn kho phù hợp.
+   * @throws {Error} Nếu không thể lấy dữ liệu.
+   */
+  static async exportAllInventory(filters = {}) {
+    try {
+      let query = supabase
+        .from("inventory")
+        .select(this.SELECT_FIELDS)
+        .order("updated_at", { ascending: false });
+
+      if (filters.branch_id) {
+        query = query.eq("branch_id", filters.branch_id);
+      }
+      if (filters.product_name) {
+        query = query.ilike("products.name", `%${filters.product_name}%`);
+      }
+      // Thêm các bộ lọc khác nếu cần
+
+      // Lấy tất cả dữ liệu, có thể cần xử lý nếu dữ liệu quá lớn trong tương lai
+      const { data, error } = await query;
+
+      if (error) {
+        console.error(
+          "❌ Model - Lỗi Supabase khi xuất danh sách tồn kho:",
+          error.message
+        );
+        throw new Error("Không thể lấy dữ liệu tồn kho để xuất file");
+      }
+
+      return data;
+    } catch (err) {
+      console.error("❌ Model - Lỗi khi xuất dữ liệu tồn kho:", err.message);
+      throw err;
+    }
+  }
   /**
    * @description Lấy thông tin chi tiết của một bản ghi tồn kho theo ID.
    * @param {number} id - ID của bản ghi tồn kho.
@@ -963,6 +1010,45 @@ class InventoryModel {
       };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy thống kê tồn kho:", err.message);
+      throw err;
+    }
+  }
+
+  /**
+   * @description Lấy các số liệu thống kê tóm tắt về tồn kho cho dashboard.
+   * @param {number | null} branchId - Lọc theo một chi nhánh cụ thể hoặc lấy toàn bộ.
+   * @returns {Promise<object>} - Đối tượng chứa các số liệu thống kê.
+   * @throws {Error} Nếu có lỗi xảy ra.
+   */
+  static async getInventorySummary(branchId = null) {
+    try {
+      const { data, error } = await supabase.rpc("get_inventory_stats", {
+        p_branch_id: branchId,
+      });
+
+      if (error) {
+        console.error(
+          "❌ Model - Lỗi khi gọi RPC get_inventory_stats cho summary:",
+          error.message
+        );
+        throw new Error("Không thể lấy thống kê tóm tắt tồn kho");
+      }
+
+      const summary = data[0] || {
+        total_items: 0,
+        total_quantity: 0,
+        low_stock_items: 0,
+        out_of_stock_items: 0,
+      };
+
+      return {
+        total_items: Number(summary.total_items),
+        total_quantity: Number(summary.total_quantity),
+        low_stock_items: Number(summary.low_stock_items),
+        out_of_stock_items: Number(summary.out_of_stock_items),
+      };
+    } catch (err) {
+      console.error("❌ Model - Lỗi khi lấy tóm tắt tồn kho:", err.message);
       throw err;
     }
   }
