@@ -531,7 +531,7 @@ class ProductModel {
         const { data: brandData, error: brandError } = await supabase
           .from("brands")
           .select("id")
-          .ilike("brand_name", `%${brand_name}%`)
+          .ilike("brand_name", brand_name) // [FIX] Tìm kiếm khớp chính xác (không phân biệt hoa thường)
           .limit(1);
 
         if (brandError) throw brandError;
@@ -544,7 +544,7 @@ class ProductModel {
         const { data: typeData, error: typeError } = await supabase
           .from("product_types")
           .select("id")
-          .ilike("type_name", `%${type_name}%`)
+          .ilike("type_name", type_name) // [FIX] Tìm kiếm khớp chính xác (không phân biệt hoa thường)
           .limit(1);
 
         if (typeError) throw typeError;

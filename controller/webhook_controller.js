@@ -57,7 +57,7 @@ class WebhookController {
             introText += `Dưới đây là danh sách các sản phẩm ${type}:`;
           }
 
-          responseText = `${introText}\n${productList}`;
+          responseText = `${introText}\n${products}`;
         } else {
           const brandName = Array.isArray(brand) ? brand[0] : brand;
           responseText = `Rất tiếc, mình không tìm thấy sản phẩm ${
