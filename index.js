@@ -52,6 +52,7 @@ const ensureUploadDir = async () => {
 };
 
 // Middleware toàn cục
+app.set("trust proxy", 1);
 app.use(cors()); // Cho phép yêu cầu từ các nguồn khác
 app.use(
   rateLimit({

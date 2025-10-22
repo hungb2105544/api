@@ -70,6 +70,8 @@ class WebhookModel {
       }
 
       const data = await ProductModel.getProductsWithTypesAndBrands(filters);
+      console.log("Dữ liệu trả về: ");
+      console.log(data);
       console.log(
         "✅ Model - Lấy sản phẩm theo thương hiệu và loại thành công."
       );
