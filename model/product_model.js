@@ -526,29 +526,29 @@ class ProductModel {
       let brandId = null;
       let typeId = null;
 
-      // ===== 1️⃣ Tìm brand_id từ brand_name nếu có =====
+      // ===== 1️⃣ Tìm 1 brand đầu tiên từ brand_name =====
       if (brand_name) {
         const { data: brandData, error: brandError } = await supabase
           .from("brands")
           .select("id")
           .ilike("brand_name", `%${brand_name}%`)
-          .single();
+          .limit(1);
 
-        if (brandError && brandError.code !== "PGRST116") throw brandError;
-        if (brandData) brandId = brandData.id;
+        if (brandError) throw brandError;
+        if (brandData?.length) brandId = brandData[0].id;
         else return []; // Không tìm thấy thương hiệu
       }
 
-      // ===== 2️⃣ Tìm type_id từ type_name nếu có =====
+      // ===== 2️⃣ Tìm 1 type đầu tiên từ type_name =====
       if (type_name) {
         const { data: typeData, error: typeError } = await supabase
           .from("product_types")
           .select("id")
           .ilike("type_name", `%${type_name}%`)
-          .single();
+          .limit(1);
 
-        if (typeError && typeError.code !== "PGRST116") throw typeError;
-        if (typeData) typeId = typeData.id;
+        if (typeError) throw typeError;
+        if (typeData?.length) typeId = typeData[0].id;
         else return []; // Không tìm thấy loại sản phẩm
       }
 
@@ -610,12 +610,11 @@ class ProductModel {
       `
         )
         .eq("is_active", true);
-      console.log(query);
+
       if (brandId) query = query.eq("brand_id", brandId);
       if (typeId) query = query.eq("type_id", typeId);
 
       const { data: products, error: productError } = await query;
-
       if (productError)
         throw new Error(`Lỗi lấy sản phẩm: ${productError.message}`);
       if (!products?.length) return [];
@@ -652,30 +651,32 @@ class ProductModel {
       `
         )
         .lte("start_date", now)
-        .gte("end_date", now)
+        .or(`end_date.gte.${now},end_date.is.null`)
         .eq("is_active", true);
 
+      if (discountError) throw discountError;
       const discountList = discounts || [];
 
       // ===== 6️⃣ Lấy tồn kho tổng =====
       const { data: inventory, error: invError } = await supabase
         .from("inventory")
-        .select("product_id, SUM(quantity) as total_quantity")
-        .in("product_id", productIds)
-        .group("product_id");
+        .select("product_id, quantity")
+        .in("product_id", productIds);
 
       const invMap = new Map();
       if (!invError && inventory?.length) {
-        inventory.forEach((i) =>
-          invMap.set(i.product_id, Number(i.total_quantity))
-        );
+        inventory.forEach((i) => {
+          invMap.set(
+            i.product_id,
+            (invMap.get(i.product_id) || 0) + Number(i.quantity)
+          );
+        });
       }
 
-      // ===== 7️⃣ Gắn dữ liệu bổ sung vào sản phẩm =====
+      // ===== 7️⃣ Gắn dữ liệu bổ sung =====
       const enrichedProducts = products.map((product) => {
         const basePrice = priceMap.get(product.id) || 0;
 
-        // Tìm giảm giá áp dụng
         const applicableDiscount = discountList.find(
           (d) =>
             d.apply_to_all ||
