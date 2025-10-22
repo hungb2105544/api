@@ -24,8 +24,11 @@ class WebhookController {
       }
 
       case "ITuVanSanPham - thuong hieu": {
-        const brand = params["san-pham"];
-        const type = params["nhan-hieu1"];
+        // [FIX] Hoán đổi cách gán biến cho đúng với entity từ Dialogflow
+        // 'nhan-hieu1' (ví dụ: 'BOO') là thương hiệu (brand)
+        // 'san-pham' (ví dụ: 'Quần short') là loại sản phẩm (type)
+        const brand = params["nhan-hieu1"];
+        const type = params["san-pham"];
 
         const products = await WebhookModel.getProductsByBrandAndType(
           brand,
@@ -44,17 +47,24 @@ class WebhookController {
             .join("\n");
 
           let introText = "Tuyệt vời! ";
-          if (brand && type) {
-            introText += `Dưới đây là danh sách sản phẩm của ${brand} thuộc loại ${type}:`;
-          } else if (brand) {
-            introText += `Dưới đây là danh sách sản phẩm của thương hiệu ${brand}:`;
+          const brandName = Array.isArray(brand) ? brand[0] : brand;
+
+          if (brandName && type) {
+            introText += `Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`;
+          } else if (brandName) {
+            introText += `Dưới đây là danh sách sản phẩm của thương hiệu ${brandName}:`;
           } else if (type) {
             introText += `Dưới đây là danh sách các sản phẩm ${type}:`;
           }
 
           responseText = `${introText}\n${productList}`;
         } else {
-          responseText = `Rất tiếc, mình không tìm thấy sản phẩm nào của thương hiệu ${brand} thuộc loại ${type}. Bạn có muốn tìm sản phẩm khác không?`;
+          const brandName = Array.isArray(brand) ? brand[0] : brand;
+          responseText = `Rất tiếc, mình không tìm thấy sản phẩm ${
+            type || ""
+          } nào của thương hiệu ${
+            brandName || ""
+          }. Bạn có muốn tìm sản phẩm khác không?`;
         }
         break;
       }
