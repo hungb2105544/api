@@ -24,9 +24,7 @@ class WebhookController {
       }
 
       case "ITuVanSanPham - thuong hieu": {
-        // [FIX] Hoán đổi cách gán biến cho đúng với entity từ Dialogflow
-        // 'nhan-hieu1' (ví dụ: 'BOO') là thương hiệu (brand)
-        // 'san-pham' (ví dụ: 'Quần short') là loại sản phẩm (type)
+        // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
         const brand = params["nhan-hieu1"];
         const type = params["san-pham"];
 
@@ -35,39 +33,83 @@ class WebhookController {
           type
         );
         console.log("🔍 Sản phẩm tìm được:", products);
+
         if (products && products.length > 0) {
-          const productList = products
-            .map((p) => {
-              const priceFormatted = new Intl.NumberFormat("vi-VN", {
-                style: "currency",
-                currency: "VND",
-              }).format(p.price || 0);
-              return `- ${p.name} - Giá: ${priceFormatted}`;
-            })
-            .join("\n");
+          // 👉 Chuẩn hoá dữ liệu sản phẩm để trả về Flutter
+          const formattedProducts = products.map((p) => ({
+            id: p.id, // 👈 thêm id
+            name: p.name,
+            image:
+              Array.isArray(p.image_urls) && p.image_urls.length > 0
+                ? p.image_urls[0]
+                : p.image_urls || null,
+            price: p.price || 0,
+            final_price: p.final_price || 0,
+            discount: p.discount
+              ? {
+                  name: p.discount.name,
+                  percentage: p.discount.discount_percentage || null,
+                  amount: p.discount.discount_amount || null,
+                }
+              : null,
+            total_stock: p.total_stock || 0,
+            brand: p.brands?.brand_name || null,
+            type: p.product_types?.type_name || null,
+          }));
 
-          let introText = "Tuyệt vời! ";
           const brandName = Array.isArray(brand) ? brand[0] : brand;
 
-          if (brandName && type) {
-            introText += `Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`;
-          } else if (brandName) {
-            introText += `Dưới đây là danh sách sản phẩm của thương hiệu ${brandName}:`;
-          } else if (type) {
-            introText += `Dưới đây là danh sách các sản phẩm ${type}:`;
-          }
-
-          responseText = `${introText}\n${products}`;
+          return res.json({
+            fulfillmentMessages: [
+              {
+                text: {
+                  text: [
+                    `Tuyệt vời! Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`,
+                  ],
+                },
+              },
+              {
+                payload: {
+                  object: {
+                    success: true,
+                    brand: brandName || null,
+                    type: type || null,
+                    count: formattedProducts.length,
+                    products: formattedProducts, // 👈 gửi danh sách sản phẩm có id
+                  },
+                },
+              },
+            ],
+          });
         } else {
+          // Không có sản phẩm
           const brandName = Array.isArray(brand) ? brand[0] : brand;
-          responseText = `Rất tiếc, mình không tìm thấy sản phẩm ${
-            type || ""
-          } nào của thương hiệu ${
-            brandName || ""
-          }. Bạn có muốn tìm sản phẩm khác không?`;
+          return res.json({
+            fulfillmentMessages: [
+              {
+                text: {
+                  text: [
+                    `Rất tiếc, mình không tìm thấy sản phẩm ${
+                      type || ""
+                    } nào của ${brandName || ""}.`,
+                  ],
+                },
+              },
+              {
+                payload: {
+                  object: {
+                    success: false,
+                    brand: brandName || null,
+                    type: type || null,
+                    products: [],
+                  },
+                },
+              },
+            ],
+          });
         }
-        break;
       }
+
       case "iDiaChi": {
         const vouchers = await WebhookModel.getStoreAddress();
         if (vouchers && vouchers.length > 0) {
