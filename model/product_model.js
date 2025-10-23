@@ -552,7 +552,7 @@ class ProductModel {
         else return [];
       }
 
-      // === 3️⃣ Lấy danh sách sản phẩm (đồng bộ Dart) ===
+      // === 3️⃣ Lấy danh sách sản phẩm (✅ ĐÃ SỬA) ===
       let query = supabase
         .from("products")
         .select(
@@ -581,7 +581,6 @@ class ProductModel {
   )
 `
         )
-
         .eq("is_active", true)
         .order("created_at", { ascending: false });
 
@@ -638,7 +637,7 @@ class ProductModel {
 
       const discountList = discounts || [];
 
-      // === 7️⃣ Chuẩn hóa dữ liệu ===
+      // === 7️⃣ Chuẩn hóa dữ liệu (✅ ĐÃ SỬA) ===
       const finalProducts = products.map((p) => {
         const basePrice = priceMap.get(p.id) || 0;
         const discount = discountList.find(
@@ -657,12 +656,31 @@ class ProductModel {
             finalPrice = basePrice - discount.discount_amount;
         }
 
+        let normalizedVariants = null;
+        if (p.product_variants && Array.isArray(p.product_variants)) {
+          normalizedVariants = p.product_variants.map((variant) => ({
+            id: variant.id,
+            color: variant.color,
+            sku: variant.sku,
+            additional_price: variant.additional_price || 0,
+            is_active: variant.is_active ?? true,
+            product_sizes: variant.sizes
+              ? variant.sizes.map((s) => ({
+                  id: s.id,
+                  sizes: { id: s.id, size_name: s.size_name },
+                }))
+              : [],
+            product_variant_images: variant.product_variant_images || [],
+          }));
+        }
+
         return {
           ...p,
           price: basePrice,
           final_price: Math.max(finalPrice, 0),
           product_discounts: discount ? [discount] : [],
           total_stock: invMap.get(p.id) || 0,
+          product_variants: normalizedVariants,
         };
       });
 
