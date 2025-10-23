@@ -526,7 +526,7 @@ class ProductModel {
       let brandId = null;
       let typeId = null;
 
-      // ===== 1️⃣ Tìm 1 brand đầu tiên từ brand_name =====
+      // === 1️⃣ Tìm brand_id từ brand_name ===
       if (brand_name) {
         const { data: brandData, error: brandError } = await supabase
           .from("brands")
@@ -536,10 +536,10 @@ class ProductModel {
 
         if (brandError) throw brandError;
         if (brandData?.length) brandId = brandData[0].id;
-        else return []; // Không tìm thấy thương hiệu
+        else return [];
       }
 
-      // ===== 2️⃣ Tìm 1 type đầu tiên từ type_name =====
+      // === 2️⃣ Tìm type_id từ type_name ===
       if (type_name) {
         const { data: typeData, error: typeError } = await supabase
           .from("product_types")
@@ -549,122 +549,70 @@ class ProductModel {
 
         if (typeError) throw typeError;
         if (typeData?.length) typeId = typeData[0].id;
-        else return []; // Không tìm thấy loại sản phẩm
+        else return [];
       }
 
-      // ===== 3️⃣ Lấy danh sách sản phẩm =====
+      // === 3️⃣ Lấy danh sách sản phẩm (đồng bộ Dart) ===
       let query = supabase
         .from("products")
         .select(
           `
-      id,
-      name,
-      description,
-      image_urls,
-      sku,
-      weight,
-      material,
-      color,
-      origin_country,
-      warranty_months,
-      care_instructions,
-      features,
-      tags,
-      average_rating,
-      total_ratings,
-      rating_distribution,
-      is_featured,
-      is_active,
-      created_at,
-      updated_at,
-      brands (
-        id,
-        brand_name,
-        image_url,
-        description
-      ),
-      product_types (
-        id,
-        type_name,
-        description,
-        image_url
-      ),
-      product_variants (
-        id,
-        color,
-        sku,
-        additional_price,
-        is_active,
-        size_id,
-        created_at,
-        sizes (
-          id,
-          size_name
-        ),
-        product_variant_images (
-          id,
-          image_url,
-          sort_order
+  *,
+  brands (id, brand_name, image_url, description),
+  product_types (id, type_name, description),
+  product_variants (
+    id, color, sku, additional_price, is_active,
+    sizes (id, size_name),
+    product_variant_images (id, image_url, sort_order)
+  ),
+  product_ratings (
+    id, rating, title, comment, images, pros, cons, user_id, created_at
+  ),
+  product_sizes (
+    id,
+    sizes (id, size_name)
+  ),
+  inventory (
+    id, branch_id, quantity, reserved_quantity,
+    branches (id, name, phone)
+  ),
+  product_price_history (
+    id, product_id, price, effective_date, end_date, is_active, created_by, created_at
+  )
+`
         )
-      )
-    `
-        )
-        .eq("is_active", true);
+
+        .eq("is_active", true)
+        .order("created_at", { ascending: false });
 
       if (brandId) query = query.eq("brand_id", brandId);
       if (typeId) query = query.eq("type_id", typeId);
 
       const { data: products, error: productError } = await query;
-      if (productError)
-        throw new Error(`Lỗi lấy sản phẩm: ${productError.message}`);
+      if (productError) throw productError;
       if (!products?.length) return [];
 
-      // ===== 4️⃣ Lấy giá hiện tại =====
-      const productIds = products.map((p) => p.id);
-      const { data: prices, error: priceError } = await supabase
+      // === 4️⃣ Lấy giá hiện tại ===
+      const ids = products.map((p) => p.id);
+      const { data: prices } = await supabase
         .from("product_price_history")
         .select("product_id, price")
-        .in("product_id", productIds)
+        .in("product_id", ids)
         .is("end_date", null);
 
       const priceMap = new Map();
-      if (!priceError && prices?.length) {
+      if (prices?.length) {
         prices.forEach((p) => priceMap.set(p.product_id, Number(p.price)));
       }
 
-      // ===== 5️⃣ Lấy giảm giá hiện tại =====
-      const now = new Date().toISOString();
-      const { data: discounts, error: discountError } = await supabase
-        .from("product_discounts")
-        .select(
-          `
-      id,
-      name,
-      product_id,
-      brand_id,
-      type_id,
-      discount_percentage,
-      discount_amount,
-      start_date,
-      end_date,
-      apply_to_all
-    `
-        )
-        .lte("start_date", now)
-        .or(`end_date.gte.${now},end_date.is.null`)
-        .eq("is_active", true);
-
-      if (discountError) throw discountError;
-      const discountList = discounts || [];
-
-      // ===== 6️⃣ Lấy tồn kho tổng =====
-      const { data: inventory, error: invError } = await supabase
+      // === 5️⃣ Lấy tồn kho tổng ===
+      const { data: inventory } = await supabase
         .from("inventory")
         .select("product_id, quantity")
-        .in("product_id", productIds);
+        .in("product_id", ids);
 
       const invMap = new Map();
-      if (!invError && inventory?.length) {
+      if (inventory?.length) {
         inventory.forEach((i) => {
           invMap.set(
             i.product_id,
@@ -673,46 +621,54 @@ class ProductModel {
         });
       }
 
-      // ===== 7️⃣ Gắn dữ liệu bổ sung (ĐÃ CẬP NHẬT) =====
-      const enrichedProducts = products.map((product) => {
-        const basePrice = priceMap.get(product.id) || 0;
+      // === 6️⃣ Lấy giảm giá ===
+      const now = new Date().toISOString();
+      const { data: discounts } = await supabase
+        .from("product_discounts")
+        .select(
+          `
+        id, name, product_id, brand_id, type_id,
+        discount_percentage, discount_amount,
+        start_date, end_date, apply_to_all
+      `
+        )
+        .lte("start_date", now)
+        .or(`end_date.gte.${now},end_date.is.null`)
+        .eq("is_active", true);
 
-        const applicableDiscount = discountList.find(
+      const discountList = discounts || [];
+
+      // === 7️⃣ Chuẩn hóa dữ liệu ===
+      const finalProducts = products.map((p) => {
+        const basePrice = priceMap.get(p.id) || 0;
+        const discount = discountList.find(
           (d) =>
             d.apply_to_all ||
-            d.product_id === product.id ||
-            d.brand_id === product.brands?.id ||
-            d.type_id === product.product_types?.id
+            d.product_id === p.id ||
+            d.brand_id === p.brand_id ||
+            d.type_id === p.type_id
         );
 
         let finalPrice = basePrice;
-        if (applicableDiscount) {
-          if (applicableDiscount.discount_percentage)
-            finalPrice =
-              basePrice * (1 - applicableDiscount.discount_percentage / 100);
-          else if (applicableDiscount.discount_amount)
-            finalPrice = basePrice - applicableDiscount.discount_amount;
+        if (discount) {
+          if (discount.discount_percentage)
+            finalPrice = basePrice * (1 - discount.discount_percentage / 100);
+          else if (discount.discount_amount)
+            finalPrice = basePrice - discount.discount_amount;
         }
 
-        const mainImage =
-          product.image_urls && product.image_urls.length > 0
-            ? product.image_urls[0]
-            : null;
-
         return {
-          ...product,
-
+          ...p,
           price: basePrice,
           final_price: Math.max(finalPrice, 0),
-          total_stock: invMap.get(product.id) || 0,
-          product_discounts: applicableDiscount ? [applicableDiscount] : [],
-          image: mainImage,
+          product_discounts: discount ? [discount] : [],
+          total_stock: invMap.get(p.id) || 0,
         };
       });
 
-      return enrichedProducts;
+      return finalProducts;
     } catch (err) {
-      console.error("❌ Lỗi khi lấy sản phẩm chi tiết:", err.message);
+      console.error("❌ Lỗi khi lấy sản phẩm:", err.message);
       throw err;
     }
   }

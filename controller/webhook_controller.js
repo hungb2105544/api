@@ -1,4 +1,5 @@
 const WebhookModel = require("../model/webhook_model");
+const ProductModel = require("../model/product_model");
 
 class WebhookController {
   static async handleWebhook(req, res) {
@@ -23,198 +24,64 @@ class WebhookController {
         break;
       }
 
-      // case "ITuVanSanPham - thuong hieu": {
-      //   // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
-      //   const brand = params["nhan-hieu1"];
-      //   const type = params["san-pham"];
-
-      //   const products = await WebhookModel.getProductsByBrandAndType(
-      //     brand,
-      //     type
-      //   );
-      //   console.log("🔍 Sản phẩm tìm được:", products);
-
-      //   if (products && products.length > 0) {
-      //     // 👉 Chuẩn hoá dữ liệu sản phẩm để trả về Flutter
-      //     const formattedProducts = products.map((p) => ({
-      //       id: p.id, // 👈 thêm id
-      //       name: p.name,
-      //       image:
-      //         Array.isArray(p.image_urls) && p.image_urls.length > 0
-      //           ? p.image_urls[0]
-      //           : p.image_urls || null,
-      //       price: p.price || 0,
-      //       final_price: p.final_price || 0,
-      //       discount: p.discount
-      //         ? {
-      //             name: p.discount.name,
-      //             percentage: p.discount.discount_percentage || null,
-      //             amount: p.discount.discount_amount || null,
-      //           }
-      //         : null,
-      //       total_stock: p.total_stock || 0,
-      //       brand: p.brands?.brand_name || null,
-      //       type: p.product_types?.type_name || null,
-      //     }));
-
-      //     const brandName = Array.isArray(brand) ? brand[0] : brand;
-
-      //     return res.json({
-      //       fulfillmentMessages: [
-      //         {
-      //           text: {
-      //             text: [
-      //               `Tuyệt vời! Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`,
-      //             ],
-      //           },
-      //         },
-      //         {
-      //           payload: {
-      //             object: {
-      //               success: true,
-      //               brand: brandName || null,
-      //               type: type || null,
-      //               count: formattedProducts.length,
-      //               products: formattedProducts, // 👈 gửi danh sách sản phẩm có id
-      //             },
-      //           },
-      //         },
-      //       ],
-      //     });
-      //   } else {
-      //     // Không có sản phẩm
-      //     const brandName = Array.isArray(brand) ? brand[0] : brand;
-      //     return res.json({
-      //       fulfillmentMessages: [
-      //         {
-      //           text: {
-      //             text: [
-      //               `Rất tiếc, mình không tìm thấy sản phẩm ${
-      //                 type || ""
-      //               } nào của ${brandName || ""}.`,
-      //             ],
-      //           },
-      //         },
-      //         {
-      //           payload: {
-      //             object: {
-      //               success: false,
-      //               brand: brandName || null,
-      //               type: type || null,
-      //               products: [],
-      //             },
-      //           },
-      //         },
-      //       ],
-      //     });
-      //   }
-      // }
       case "ITuVanSanPham - thuong hieu": {
-        // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
-        const brand = params["nhan-hieu1"];
-        const type = params["san-pham"];
+        const brand = params["nhan-hieu1"] || params["brand"];
+        const type = params["san-pham"] || params["product_type"];
 
-        const products = await WebhookModel.getProductsByBrandAndType(
-          brand,
-          type
-        );
-        console.log("🔍 Sản phẩm tìm được:", products);
+        console.log(`🔍 Nhận yêu cầu: brand="${brand}", type="${type}"`);
 
-        if (products && products.length > 0) {
-          const formattedProducts = products.map((p) => {
-            const adaptedVariants = p.product_variants.map((v) => ({
-              ...v,
-              product_sizes: v.sizes ? [v.sizes] : [],
-            }));
+        // Gọi model để lấy sản phẩm (đồng bộ với Dart)
+        const products = await ProductModel.getProductsWithTypesAndBrands({
+          brand_name: brand,
+          type_name: type,
+        });
 
-            const uniqueSizes = [
-              ...new Set(
-                adaptedVariants.map((v) => JSON.stringify(v.product_sizes[0]))
-              ),
-            ].map((str) => JSON.parse(str));
-
-            return {
-              id: p.id,
-              name: p.name,
-              brand_id: p.brands?.id || null,
-              type_id: p.product_types?.id || null,
-              image_urls: Array.isArray(p.image_urls)
-                ? p.image_urls
-                : [p.image_urls || null],
-              price: p.price || 0,
-              final_price: p.final_price || 0,
-              discount: p.discount
-                ? {
-                    name: p.discount.name,
-                    percentage: p.discount.discount_percentage || null,
-                    amount: p.discount.discount_amount || null,
-                  }
-                : null,
-              total_stock: p.total_stock || 0,
-              brands: p.brands || null,
-              product_types: p.product_types || null,
-              product_variants: adaptedVariants,
-              product_sizes: uniqueSizes,
-            };
-          });
-
-          const brandName = Array.isArray(brand) ? brand[0] : brand;
-
+        if (!products || products.length === 0) {
           return res.json({
             fulfillmentMessages: [
               {
                 text: {
                   text: [
-                    `Tuyệt vời! Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`,
+                    `Hiện tại mình không tìm thấy sản phẩm nào của thương hiệu "${brand}" thuộc loại "${type}". 😢`,
                   ],
-                },
-              },
-              {
-                payload: {
-                  object: {
-                    success: true,
-                    brand: brandName || null,
-                    type: type || null,
-                    count: formattedProducts.length,
-                    products: formattedProducts,
-                  },
-                },
-              },
-            ],
-          });
-        } else {
-          const brandName = Array.isArray(brand) ? brand[0] : brand;
-          return res.json({
-            fulfillmentMessages: [
-              {
-                text: {
-                  text: [
-                    `Rất tiếc, mình không tìm thấy sản phẩm ${
-                      type || ""
-                    } nào của ${brandName || ""}.`,
-                  ],
-                },
-              },
-              {
-                payload: {
-                  object: {
-                    success: false,
-                    brand: brandName || null,
-                    type: type || null,
-                    products: [],
-                  },
                 },
               },
             ],
           });
         }
+
+        // ✅ Trả dữ liệu gốc (raw data, không format)
+        const brandName = Array.isArray(brand) ? brand[0] : brand;
+
+        return res.json({
+          fulfillmentMessages: [
+            {
+              text: {
+                text: [
+                  `Tuyệt vời! Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`,
+                ],
+              },
+            },
+            {
+              payload: {
+                object: {
+                  success: true,
+                  brand: brandName || null,
+                  type: type || null,
+                  count: products.length,
+                  products, // dữ liệu gốc từ Supabase (không format)
+                },
+              },
+            },
+          ],
+        });
       }
+
       case "iDiaChi": {
         const vouchers = await WebhookModel.getStoreAddress();
         if (vouchers && vouchers.length > 0) {
           const voucherList = vouchers
             .map((branch) => {
-              // Kiểm tra xem có thông tin địa chỉ không
               if (!branch.addresses)
                 return `🏬 ${branch.name} - (Chưa có thông tin địa chỉ)`;
 
@@ -266,6 +133,7 @@ class WebhookController {
         }
         break;
       }
+
       default:
         responseText = "Xin lỗi, mình chưa được huấn luyện cho yêu cầu này.";
     }
