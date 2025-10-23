@@ -23,42 +23,104 @@ class WebhookController {
         break;
       }
 
+      // case "ITuVanSanPham - thuong hieu": {
+      //   // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
+      //   const brand = params["nhan-hieu1"];
+      //   const type = params["san-pham"];
+
+      //   const products = await WebhookModel.getProductsByBrandAndType(
+      //     brand,
+      //     type
+      //   );
+      //   console.log("🔍 Sản phẩm tìm được:", products);
+
+      //   if (products && products.length > 0) {
+      //     // 👉 Chuẩn hoá dữ liệu sản phẩm để trả về Flutter
+      //     const formattedProducts = products.map((p) => ({
+      //       id: p.id, // 👈 thêm id
+      //       name: p.name,
+      //       image:
+      //         Array.isArray(p.image_urls) && p.image_urls.length > 0
+      //           ? p.image_urls[0]
+      //           : p.image_urls || null,
+      //       price: p.price || 0,
+      //       final_price: p.final_price || 0,
+      //       discount: p.discount
+      //         ? {
+      //             name: p.discount.name,
+      //             percentage: p.discount.discount_percentage || null,
+      //             amount: p.discount.discount_amount || null,
+      //           }
+      //         : null,
+      //       total_stock: p.total_stock || 0,
+      //       brand: p.brands?.brand_name || null,
+      //       type: p.product_types?.type_name || null,
+      //     }));
+
+      //     const brandName = Array.isArray(brand) ? brand[0] : brand;
+
+      //     return res.json({
+      //       fulfillmentMessages: [
+      //         {
+      //           text: {
+      //             text: [
+      //               `Tuyệt vời! Dưới đây là danh sách sản phẩm ${type} của thương hiệu ${brandName}:`,
+      //             ],
+      //           },
+      //         },
+      //         {
+      //           payload: {
+      //             object: {
+      //               success: true,
+      //               brand: brandName || null,
+      //               type: type || null,
+      //               count: formattedProducts.length,
+      //               products: formattedProducts, // 👈 gửi danh sách sản phẩm có id
+      //             },
+      //           },
+      //         },
+      //       ],
+      //     });
+      //   } else {
+      //     // Không có sản phẩm
+      //     const brandName = Array.isArray(brand) ? brand[0] : brand;
+      //     return res.json({
+      //       fulfillmentMessages: [
+      //         {
+      //           text: {
+      //             text: [
+      //               `Rất tiếc, mình không tìm thấy sản phẩm ${
+      //                 type || ""
+      //               } nào của ${brandName || ""}.`,
+      //             ],
+      //           },
+      //         },
+      //         {
+      //           payload: {
+      //             object: {
+      //               success: false,
+      //               brand: brandName || null,
+      //               type: type || null,
+      //               products: [],
+      //             },
+      //           },
+      //         },
+      //       ],
+      //     });
+      //   }
+      // }
       case "ITuVanSanPham - thuong hieu": {
-        // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
         const brand = params["nhan-hieu1"];
         const type = params["san-pham"];
-
         const products = await WebhookModel.getProductsByBrandAndType(
           brand,
           type
         );
-        console.log("🔍 Sản phẩm tìm được:", products);
+        console.log("🔍 Sản phẩm tìm được:", products.length);
+
+        const brandName = Array.isArray(brand) ? brand[0] : brand;
 
         if (products && products.length > 0) {
-          // 👉 Chuẩn hoá dữ liệu sản phẩm để trả về Flutter
-          const formattedProducts = products.map((p) => ({
-            id: p.id, // 👈 thêm id
-            name: p.name,
-            image:
-              Array.isArray(p.image_urls) && p.image_urls.length > 0
-                ? p.image_urls[0]
-                : p.image_urls || null,
-            price: p.price || 0,
-            final_price: p.final_price || 0,
-            discount: p.discount
-              ? {
-                  name: p.discount.name,
-                  percentage: p.discount.discount_percentage || null,
-                  amount: p.discount.discount_amount || null,
-                }
-              : null,
-            total_stock: p.total_stock || 0,
-            brand: p.brands?.brand_name || null,
-            type: p.product_types?.type_name || null,
-          }));
-
-          const brandName = Array.isArray(brand) ? brand[0] : brand;
-
           return res.json({
             fulfillmentMessages: [
               {
@@ -74,8 +136,8 @@ class WebhookController {
                     success: true,
                     brand: brandName || null,
                     type: type || null,
-                    count: formattedProducts.length,
-                    products: formattedProducts, // 👈 gửi danh sách sản phẩm có id
+                    count: products.length,
+                    products: products,
                   },
                 },
               },
@@ -83,7 +145,6 @@ class WebhookController {
           });
         } else {
           // Không có sản phẩm
-          const brandName = Array.isArray(brand) ? brand[0] : brand;
           return res.json({
             fulfillmentMessages: [
               {
@@ -109,7 +170,6 @@ class WebhookController {
           });
         }
       }
-
       case "iDiaChi": {
         const vouchers = await WebhookModel.getStoreAddress();
         if (vouchers && vouchers.length > 0) {

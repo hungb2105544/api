@@ -531,7 +531,7 @@ class ProductModel {
         const { data: brandData, error: brandError } = await supabase
           .from("brands")
           .select("id")
-          .ilike("brand_name", brand_name) // [FIX] Tìm kiếm khớp chính xác (không phân biệt hoa thường)
+          .ilike("brand_name", brand_name)
           .limit(1);
 
         if (brandError) throw brandError;
@@ -544,7 +544,7 @@ class ProductModel {
         const { data: typeData, error: typeError } = await supabase
           .from("product_types")
           .select("id")
-          .ilike("type_name", type_name) // [FIX] Tìm kiếm khớp chính xác (không phân biệt hoa thường)
+          .ilike("type_name", type_name)
           .limit(1);
 
         if (typeError) throw typeError;
@@ -557,57 +557,57 @@ class ProductModel {
         .from("products")
         .select(
           `
+      id,
+      name,
+      description,
+      image_urls,
+      sku,
+      weight,
+      material,
+      color,
+      origin_country,
+      warranty_months,
+      care_instructions,
+      features,
+      tags,
+      average_rating,
+      total_ratings,
+      rating_distribution,
+      is_featured,
+      is_active,
+      created_at,
+      updated_at,
+      brands (
         id,
-        name,
+        brand_name,
+        image_url,
+        description
+      ),
+      product_types (
+        id,
+        type_name,
         description,
-        image_urls,
-        sku,
-        weight,
-        material,
+        image_url
+      ),
+      product_variants (
+        id,
         color,
-        origin_country,
-        warranty_months,
-        care_instructions,
-        features,
-        tags,
-        average_rating,
-        total_ratings,
-        rating_distribution,
-        is_featured,
+        sku,
+        additional_price,
         is_active,
+        size_id,
         created_at,
-        updated_at,
-        brands (
+        sizes (
           id,
-          brand_name,
+          size_name
+        ),
+        product_variant_images (
+          id,
           image_url,
-          description
-        ),
-        product_types (
-          id,
-          type_name,
-          description,
-          image_url
-        ),
-        product_variants (
-          id,
-          color,
-          sku,
-          additional_price,
-          is_active,
-          size_id,
-          created_at,
-          sizes (
-            id,
-            size_name
-          ),
-          product_variant_images (
-            id,
-            image_url,
-            sort_order
-          )
+          sort_order
         )
-      `
+      )
+    `
         )
         .eq("is_active", true);
 
@@ -638,17 +638,17 @@ class ProductModel {
         .from("product_discounts")
         .select(
           `
-        id,
-        name,
-        product_id,
-        brand_id,
-        type_id,
-        discount_percentage,
-        discount_amount,
-        start_date,
-        end_date,
-        apply_to_all
-      `
+      id,
+      name,
+      product_id,
+      brand_id,
+      type_id,
+      discount_percentage,
+      discount_amount,
+      start_date,
+      end_date,
+      apply_to_all
+    `
         )
         .lte("start_date", now)
         .or(`end_date.gte.${now},end_date.is.null`)
@@ -673,7 +673,7 @@ class ProductModel {
         });
       }
 
-      // ===== 7️⃣ Gắn dữ liệu bổ sung =====
+      // ===== 7️⃣ Gắn dữ liệu bổ sung (ĐÃ CẬP NHẬT) =====
       const enrichedProducts = products.map((product) => {
         const basePrice = priceMap.get(product.id) || 0;
 
@@ -694,12 +694,19 @@ class ProductModel {
             finalPrice = basePrice - applicableDiscount.discount_amount;
         }
 
+        const mainImage =
+          product.image_urls && product.image_urls.length > 0
+            ? product.image_urls[0]
+            : null;
+
         return {
           ...product,
+
           price: basePrice,
           final_price: Math.max(finalPrice, 0),
-          discount: applicableDiscount || null,
           total_stock: invMap.get(product.id) || 0,
+          product_discounts: applicableDiscount ? [applicableDiscount] : [],
+          image: mainImage,
         };
       });
 
