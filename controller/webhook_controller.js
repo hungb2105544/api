@@ -110,17 +110,56 @@ class WebhookController {
       //   }
       // }
       case "ITuVanSanPham - thuong hieu": {
+        // 'nhan-hieu1' là thương hiệu, 'san-pham' là loại sản phẩm
         const brand = params["nhan-hieu1"];
         const type = params["san-pham"];
+
         const products = await WebhookModel.getProductsByBrandAndType(
           brand,
           type
         );
-        console.log("🔍 Sản phẩm tìm được:", products.length);
-
-        const brandName = Array.isArray(brand) ? brand[0] : brand;
+        console.log("🔍 Sản phẩm tìm được:", products);
 
         if (products && products.length > 0) {
+          const formattedProducts = products.map((p) => {
+            const adaptedVariants = p.product_variants.map((v) => ({
+              ...v,
+              product_sizes: v.sizes ? [v.sizes] : [],
+            }));
+
+            const uniqueSizes = [
+              ...new Set(
+                adaptedVariants.map((v) => JSON.stringify(v.product_sizes[0]))
+              ),
+            ].map((str) => JSON.parse(str));
+
+            return {
+              id: p.id,
+              name: p.name,
+              brand_id: p.brands?.id || null,
+              type_id: p.product_types?.id || null,
+              image_urls: Array.isArray(p.image_urls)
+                ? p.image_urls
+                : [p.image_urls || null],
+              price: p.price || 0,
+              final_price: p.final_price || 0,
+              discount: p.discount
+                ? {
+                    name: p.discount.name,
+                    percentage: p.discount.discount_percentage || null,
+                    amount: p.discount.discount_amount || null,
+                  }
+                : null,
+              total_stock: p.total_stock || 0,
+              brands: p.brands || null,
+              product_types: p.product_types || null,
+              product_variants: adaptedVariants,
+              product_sizes: uniqueSizes,
+            };
+          });
+
+          const brandName = Array.isArray(brand) ? brand[0] : brand;
+
           return res.json({
             fulfillmentMessages: [
               {
@@ -136,15 +175,15 @@ class WebhookController {
                     success: true,
                     brand: brandName || null,
                     type: type || null,
-                    count: products.length,
-                    products: products,
+                    count: formattedProducts.length,
+                    products: formattedProducts,
                   },
                 },
               },
             ],
           });
         } else {
-          // Không có sản phẩm
+          const brandName = Array.isArray(brand) ? brand[0] : brand;
           return res.json({
             fulfillmentMessages: [
               {
