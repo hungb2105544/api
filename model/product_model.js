@@ -552,7 +552,7 @@ class ProductModel {
         else return [];
       }
 
-      // === 3️⃣ Lấy danh sách sản phẩm (✅ ĐÃ SỬA) ===
+      // === 3️⃣ Lấy danh sách sản phẩm ===
       let query = supabase
         .from("products")
         .select(
@@ -562,7 +562,6 @@ class ProductModel {
   product_types (id, type_name, description),
   product_variants (
     id, color, sku, additional_price, is_active,
-    sizes (id, size_name),
     product_variant_images (id, image_url, sort_order)
   ),
   product_ratings (
@@ -637,7 +636,7 @@ class ProductModel {
 
       const discountList = discounts || [];
 
-      // === 7️⃣ Chuẩn hóa dữ liệu (✅ ĐÃ SỬA) ===
+      // === 7️⃣ Chuẩn hóa dữ liệu (✅ SAFE VERSION) ===
       const finalProducts = products.map((p) => {
         const basePrice = priceMap.get(p.id) || 0;
         const discount = discountList.find(
@@ -656,22 +655,39 @@ class ProductModel {
             finalPrice = basePrice - discount.discount_amount;
         }
 
+        // ✅ Lấy product_sizes từ product level
+        const productSizesData = Array.isArray(p.product_sizes)
+          ? p.product_sizes
+          : [];
+
+        // ✅ Chuẩn hóa product_variants với SAFE CHECKS
         let normalizedVariants = null;
         if (p.product_variants && Array.isArray(p.product_variants)) {
-          normalizedVariants = p.product_variants.map((variant) => ({
-            id: variant.id,
-            color: variant.color,
-            sku: variant.sku,
-            additional_price: variant.additional_price || 0,
-            is_active: variant.is_active ?? true,
-            product_sizes: variant.sizes
-              ? variant.sizes.map((s) => ({
-                  id: s.id,
-                  sizes: { id: s.id, size_name: s.size_name },
-                }))
-              : [],
-            product_variant_images: variant.product_variant_images || [],
-          }));
+          normalizedVariants = p.product_variants.map((variant) => {
+            // ✅ KIỂM TRA variant images
+            let variantImages = [];
+            if (
+              variant.product_variant_images &&
+              Array.isArray(variant.product_variant_images)
+            ) {
+              variantImages = variant.product_variant_images.map((img) => ({
+                id: img?.id || 0,
+                image_url: img?.image_url || "",
+                sort_order: img?.sort_order || 0,
+              }));
+            }
+
+            return {
+              id: variant.id || 0,
+              color: variant.color || "",
+              sku: variant.sku || "",
+              additional_price: Number(variant.additional_price) || 0,
+              is_active: variant.is_active ?? true,
+              // ✅ Dùng product_sizes từ product level (giống Dart query)
+              product_sizes: productSizesData,
+              product_variant_images: variantImages,
+            };
+          });
         }
 
         return {
@@ -680,6 +696,7 @@ class ProductModel {
           final_price: Math.max(finalPrice, 0),
           product_discounts: discount ? [discount] : [],
           total_stock: invMap.get(p.id) || 0,
+          // ✅ Ghi đè product_variants đã chuẩn hóa
           product_variants: normalizedVariants,
         };
       });
@@ -687,6 +704,7 @@ class ProductModel {
       return finalProducts;
     } catch (err) {
       console.error("❌ Lỗi khi lấy sản phẩm:", err.message);
+      console.error("❌ Stack trace:", err.stack);
       throw err;
     }
   }
