@@ -24,13 +24,100 @@ class WebhookController {
         break;
       }
 
+      case "IHoiVeSanPhamTheoLoai": {
+        const type = params["loai-san-pham"] || params["product_type"];
+        console.log(`🔍 Nhận yêu cầu: type="${type}"`);
+        const result = await ProductModel.getProductsWithTypes({
+          type_name: type,
+        });
+
+        if (
+          !result.success ||
+          !result.products ||
+          result.products.length === 0
+        ) {
+          return res.json({
+            fulfillmentMessages: [
+              {
+                text: {
+                  text: [
+                    result.message ||
+                      `Rất tiếc, mình không tìm thấy sản phẩm nào thuộc loại "${type}". 😢`,
+                  ],
+                },
+              },
+            ],
+          });
+        }
+
+        return res.json({
+          fulfillmentMessages: [
+            {
+              text: {
+                text: [
+                  `Tuyệt vời! Dưới đây là danh sách các sản phẩm ${type} mà mình tìm thấy:`,
+                ],
+              },
+            },
+            {
+              payload: {
+                object: result, // Trả về toàn bộ object result từ model
+              },
+            },
+          ],
+        });
+      }
+
+      case "IHoiVeSanPhamTheoThuongHieu": {
+        const brand = params["thuong-hieu"] || params["brand"];
+        console.log(`🔍 Nhận yêu cầu: brand="${brand}"`);
+        const result = await ProductModel.getProductsWithBrands({
+          brand_name: brand,
+        });
+
+        if (
+          !result.success ||
+          !result.products ||
+          result.products.length === 0
+        ) {
+          return res.json({
+            fulfillmentMessages: [
+              {
+                text: {
+                  text: [
+                    result.message ||
+                      `Rất tiếc, mình không tìm thấy sản phẩm nào thuộc thương hiệu "${brand}". 😢`,
+                  ],
+                },
+              },
+            ],
+          });
+        }
+
+        return res.json({
+          fulfillmentMessages: [
+            {
+              text: {
+                text: [
+                  `Tuyệt vời! Dưới đây là danh sách các sản phẩm của thương hiệu ${brand} mà mình tìm thấy:`,
+                ],
+              },
+            },
+            {
+              payload: {
+                object: result,
+              },
+            },
+          ],
+        });
+      }
+
       case "ITuVanSanPham - thuong hieu": {
         const brand = params["nhan-hieu1"] || params["brand"];
         const type = params["san-pham"] || params["product_type"];
 
         console.log(`🔍 Nhận yêu cầu: brand="${brand}", type="${type}"`);
 
-        // Gọi model để lấy sản phẩm (đồng bộ với Dart)
         const products = await ProductModel.getProductsWithTypesAndBrands({
           brand_name: brand,
           type_name: type,
@@ -49,8 +136,6 @@ class WebhookController {
             ],
           });
         }
-
-        // ✅ Trả dữ liệu gốc (raw data, không format)
         const brandName = Array.isArray(brand) ? brand[0] : brand;
 
         return res.json({
@@ -69,7 +154,7 @@ class WebhookController {
                   brand: brandName || null,
                   type: type || null,
                   count: products.length,
-                  products, // dữ liệu gốc từ Supabase (không format)
+                  products,
                 },
               },
             },
