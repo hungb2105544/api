@@ -118,24 +118,30 @@ class WebhookController {
 
         console.log(`🔍 Nhận yêu cầu: brand="${brand}", type="${type}"`);
 
-        const products = await ProductModel.getProductsWithTypesAndBrands({
+        const result = await ProductModel.getProductsWithTypesAndBrands({
           brand_name: brand,
           type_name: type,
         });
 
-        if (!products || products.length === 0) {
+        if (
+          !result.success ||
+          !result.products ||
+          result.products.length === 0
+        ) {
           return res.json({
             fulfillmentMessages: [
               {
                 text: {
                   text: [
-                    `Hiện tại mình không tìm thấy sản phẩm nào của thương hiệu "${brand}" thuộc loại "${type}". 😢`,
+                    result.message ||
+                      `Hiện tại mình không tìm thấy sản phẩm nào của thương hiệu "${brand}" thuộc loại "${type}". 😢`,
                   ],
                 },
               },
             ],
           });
         }
+
         const brandName = Array.isArray(brand) ? brand[0] : brand;
 
         return res.json({
@@ -149,19 +155,12 @@ class WebhookController {
             },
             {
               payload: {
-                object: {
-                  success: true,
-                  brand: brandName || null,
-                  type: type || null,
-                  count: products.length,
-                  products,
-                },
+                object: result, // ✅ Trả về result trực tiếp (đã có đúng cấu trúc)
               },
             },
           ],
         });
       }
-
       case "iDiaChi": {
         const vouchers = await WebhookModel.getStoreAddress();
         if (vouchers && vouchers.length > 0) {
