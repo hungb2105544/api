@@ -877,7 +877,6 @@ class ProductModel {
   static async getProductsWithTypes(filters = {}) {
     try {
       const { type_name } = filters;
-      let brandId = null;
       let typeId = null;
 
       // === 2️⃣ Tìm type_id từ type_name ===
@@ -1188,7 +1187,6 @@ class ProductModel {
       // Trả về kết quả thành công cùng danh sách sản phẩm
       return {
         success: true,
-        brand: brand_name || null, // Trả về tên brand đã lọc (nếu có)
         type: type_name || null, // Trả về tên type đã lọc (nếu có)
         count: finalProducts.length,
         products: finalProducts,
