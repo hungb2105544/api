@@ -103,7 +103,7 @@ class WebhookController {
             },
             {
               payload: {
-                object: result, // Trả về toàn bộ object result từ model
+                object: result,
               },
             },
           ],
