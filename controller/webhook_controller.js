@@ -49,7 +49,49 @@ class WebhookController {
             ],
           });
         }
+        return res.json({
+          fulfillmentMessages: [
+            {
+              text: {
+                text: [
+                  `Tuyệt vời! Dưới đây là danh sách các sản phẩm ${type} mà mình tìm thấy:`,
+                ],
+              },
+            },
+            {
+              payload: {
+                object: result, // Trả về toàn bộ object result từ model
+              },
+            },
+          ],
+        });
+      }
 
+      case "ITuVanSanPham - Theo loai": {
+        const type = params["loai-san-pham"] || params["product_type"];
+        console.log(`🔍 Nhận yêu cầu: type="${type}"`);
+        const result = await ProductModel.getProductsWithTypes({
+          type_name: type,
+        });
+
+        if (
+          !result.success ||
+          !result.products ||
+          result.products.length === 0
+        ) {
+          return res.json({
+            fulfillmentMessages: [
+              {
+                text: {
+                  text: [
+                    result.message ||
+                      `Rất tiếc, mình không tìm thấy sản phẩm nào thuộc loại "${type}". 😢`,
+                  ],
+                },
+              },
+            ],
+          });
+        }
         return res.json({
           fulfillmentMessages: [
             {
