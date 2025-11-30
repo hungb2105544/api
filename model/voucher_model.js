@@ -7,9 +7,12 @@ class VoucherModel {
 
   static async getAllVouchers(limit = 10, offset = 0, filters = {}) {
     try {
-      let query = supabase.from("vouchers").select(this.SELECT_FIELDS, {
-        count: "exact",
-      });
+      let query = supabase
+        .from("vouchers")
+        .select(this.SELECT_FIELDS, {
+          count: "exact",
+        })
+        .eq("is_active", true);
 
       if (filters.type) {
         query = query.eq("type", filters.type);

@@ -27,7 +27,7 @@ class OrderModel {
         total,
         status,
         created_at,
-        user_profiles ( full_name ),
+        user_profiles (*),
         order_items (
           quantity,
           products ( name, sku, image_urls ),

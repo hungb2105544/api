@@ -9,7 +9,6 @@ class BrandController {
         .from("brands")
         .select(BrandModel.SELECT_FIELDS)
         .order("created_at", { ascending: false });
-
       if (error) {
         return res.status(400).json({
           success: false,
@@ -46,6 +45,7 @@ class BrandController {
         message: result.message,
       });
     } catch (error) {
+      console.error("❌ Controller - Lỗi khi tạo thương hiệu:", error.message);
       return res.status(500).json({
         success: false,
         message: `Lỗi server: ${error.message}`,

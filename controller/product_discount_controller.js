@@ -104,18 +104,21 @@ class ProductDiscountController {
   static async updateDiscount(req, res) {
     try {
       const { id } = req.params;
-      // Loại bỏ các trường không nên cập nhật trực tiếp
-      const {
-        product_id,
-        brand_id,
-        type_id,
-        apply_to_all,
-        created_at,
-        products,
-        brands,
-        product_types,
-        ...updateData
-      } = req.body;
+      const allowedUpdates = [
+        "name",
+        "discount_percentage",
+        "discount_amount",
+        "start_date",
+        "end_date",
+        "is_active",
+      ];
+      const updateData = {};
+
+      Object.keys(req.body).forEach((key) => {
+        if (allowedUpdates.includes(key)) {
+          updateData[key] = req.body[key];
+        }
+      });
 
       if (Object.keys(updateData).length === 0) {
         return res

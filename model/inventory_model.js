@@ -70,7 +70,6 @@ class InventoryModel {
    */
   static async getAllInventory(limit = 10, offset = 0, filters = {}) {
     try {
-      // Thêm { count: 'exact' } để lấy tổng số lượng
       let query = supabase.from("inventory").select(this.SELECT_FIELDS, {
         count: "exact",
       });
@@ -80,10 +79,6 @@ class InventoryModel {
       }
       if (filters.product_id) {
         query = query.eq("product_id", filters.product_id);
-      }
-      // Thêm bộ lọc theo tên sản phẩm
-      if (filters.product_name) {
-        query = query.ilike("products.name", `%${filters.product_name}%`);
       }
       if (filters.variant_id) {
         query = query.eq("variant_id", filters.variant_id);
@@ -95,7 +90,6 @@ class InventoryModel {
         query = query.lte("quantity", supabase.raw("min_stock_level"));
       }
 
-      // Áp dụng sắp xếp và phân trang sau khi lọc
       query = query
         .order("updated_at", { ascending: false })
         .range(offset, offset + limit - 1);
@@ -110,8 +104,18 @@ class InventoryModel {
         throw new Error("Không thể lấy danh sách tồn kho");
       }
 
-      // Trả về đối tượng chứa cả data và tổng số lượng
-      return { data, total: count };
+      let filteredData = data;
+      if (filters.product_name) {
+        const searchTerm = filters.product_name.toLowerCase();
+        filteredData = data.filter((item) =>
+          item.products?.name?.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      return {
+        data: filteredData,
+        total: filters.product_name ? filteredData.length : count,
+      };
     } catch (err) {
       console.error("❌ Model - Lỗi khi lấy tồn kho:", err.message);
       throw err;
